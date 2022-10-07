@@ -1,0 +1,9 @@
+/**/target/**/*
+/**/.idea/**/*
+*.png
+*.PNG
+*.jpg
+*.JPG
+*.jpeg
+*.JPEG
+
