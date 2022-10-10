@@ -50,6 +50,7 @@ struct MySpecConstants {
     wight: u32,
     height: u32,
 }
+
 unsafe impl SpecializationConstants for MySpecConstants {
     fn descriptors() -> &'static [SpecializationMapEntry] {
         static DESCRIPTORS: [SpecializationMapEntry; 2] = [
@@ -72,8 +73,9 @@ unsafe impl SpecializationConstants for MySpecConstants {
 #[repr(C)]
 #[derive(Default, Copy, Clone, Zeroable, Pod)]
 struct Vertex {
-    position: [f32; 3],
+    position: [[f32; 2]; 3],
 }
+
 //3189 -- 1 1046 -- 2  610 -- 3 409 -- 4  286 -- 5 210 -- 6 140 -- 7
 mod vs {
     vulkano_shaders::shader! {
@@ -89,18 +91,43 @@ vec3 colors[3] = vec3[](
 layout (constant_id = 0) const int WIGHT = 64;
 layout (constant_id = 1) const int HEIGHT = 64;
 
-layout(location = 0) in vec3 position;
+layout(location = 0) in vec2[3] position;
 layout(location = 1) out vec3 fragColor;
-layout(location = 2) out vec3 pointGrad;
+//layout(location = 2) out vec3 pointGrad;
+layout(location = 4) out vec3 pointXGrad;
+layout(location = 5) out vec3 pointYGrad;
 
-layout(location = 3) out vec4 points[3] ;
+layout(location = 6) out float points[3][2] ;
+
+
 
 void main() {
-    points[ gl_VertexIndex % 3 ] = vec4(position.x, position.y, 0.0, 1.0);
-    gl_Position = vec4(position.x, position.y, 0.0, 1.0);
+    // points[ gl_VertexIndex % 3 ][0] = position.x;
+    // points[ gl_VertexIndex % 3 ][1] = position.y;
+
+    float c_x = position[gl_VertexIndex % 3].x;
+    float c_y = position[gl_VertexIndex % 3].y;
+
+    points[ 0 ][0] = ((position[0].x + 1) / 2) * WIGHT ;
+    points[ 0 ][1] = ((1 * position[0].y + 1) / 2) * HEIGHT;
+    points[ 1 ][0] = ((position[1].x + 1) / 2) * WIGHT ;
+    points[ 1 ][1] = ((1 * position[1].y + 1) / 2) * HEIGHT;
+    points[ 2 ][0] = ((position[2].x + 1) / 2) * WIGHT ;
+    points[ 2 ][1] = ((1 * position[2].y + 1) / 2) * HEIGHT;
+
+    // if (gl_VertexIndex == 0)
+    //     gl_Position = vec4(WIGHT / 800, HEIGHT / 800, 0.0, 1.0);
+    // else
+        gl_Position = vec4(c_x, c_y, 0.0, 1.0);
     fragColor = colors[ gl_VertexIndex % 3 ];
-    gl_PointSize = gl_Position.z;
-    pointGrad = sqrt(pow(((position.x + 1) / 2 * WIGHT), 2) + pow(((-1 * position.y + 1) / 2 * HEIGHT), 2)) * colors[ gl_VertexIndex % 3 ];
+    // gl_PointSize = gl_Position.z;
+    // pointGrad = sqrt(pow(((position.x + 1) / 2 * WIGHT), 2) + pow(((-1 * position.y + 1) / 2 * HEIGHT), 2)) * colors[ gl_VertexIndex % 3 ];
+
+    // pointXGrad = ((position.x + 1) / 2) * WIGHT * vec3(1.0, 1.0, 1.0);
+    // pointYGrad = ((1 * position.y + 1) / 2) * HEIGHT * vec3(1.0, 1.0, 1.0);
+
+    pointXGrad = ((c_x + 1) / 2) * WIGHT * colors[ gl_VertexIndex % 3 ];
+    pointYGrad = ((-1 * c_y + 1) / 2) * HEIGHT * colors[ gl_VertexIndex % 3 ];
 
 }"
     }
@@ -113,25 +140,71 @@ mod fs {
         src: "
 // language=GLSL
 #version 450
-
-layout(location = 0) out vec4 f_color;
-layout(location = 1) in vec3 fragColor;
-layout(location = 2) in vec3 pointGrad;
-layout(location = 3) in vec4 points[3];
-
 layout (constant_id = 0) const int WIGHT = 64;
 layout (constant_id = 1) const int HEIGHT = 64;
 
+layout(location = 0) out vec4 f_color;
+layout(location = 1) in vec3 fragColor;
+// layout(location = 2) in vec3 pointGrad;
+layout(location = 4) in vec3 pointXGrad;
+layout(location = 5) in vec3 pointYGrad;
+
+layout(location = 6) in float points[3][2];
+
+
+
+
+
 void main() {
-    if ( pointGrad.x < 10)
+    float A1 = points[0][1] - points[1][1];
+    float B1 = points[1][0] - points[0][0];
+    float C1 = points[0][0] * points[1][1] - points[1][0] * points[0][1];
+
+    float A2 = points[1][1] - points[2][1];
+    float B2 = points[2][0] - points[1][0];
+    float C2 = points[1][0] * points[2][1] - points[2][0] * points[1][1];
+
+    float A3 = points[2][1] - points[0][1];
+    float B3 = points[0][0] - points[2][0];
+    float C3 = points[2][0] * points[0][1] - points[0][0] * points[2][1];
+
+    if (abs( A1 * gl_FragCoord.x   + B1 * gl_FragCoord.y + C1) / sqrt(A1*A1 + B1*B1) < 10 )
         f_color = vec4(0.5, 0.0, 0.0, 1.0);
-    else if (pointGrad.y < 10)
+
+    else if (abs( A2 * gl_FragCoord.x   + B2 * gl_FragCoord.y + C2) / sqrt(A2*A2 + B2*B2) < 10)
         f_color = vec4(0.0, 0.5, 0.0, 1.0);
-    else if (pointGrad.z < 10)
+
+    else if (abs( A3 * gl_FragCoord.x   + B3 * gl_FragCoord.y + C3) / sqrt(A3*A3 + B3*B3) < 10)
         f_color = vec4(0.0, 0.0, 0.5, 1.0);
+
     else
-        // f_color = vec4(1.0, 1.0, 1.0, 1.0);
         f_color = vec4(fragColor, 1.0);
+
+    // if ( pointXGrad.x * pointXGrad.x   + pointYGrad.x * pointYGrad.x < 100 )
+    //     f_color = vec4(0.5, 0.0, 0.0, 1.0);
+    // else if (pointXGrad.y * pointXGrad.y + pointYGrad.y * pointYGrad.y < 100)
+    //     f_color = vec4(0.0, 0.5, 0.0, 1.0);
+    // else if (pointXGrad.z * pointXGrad.z + pointYGrad.z * pointYGrad.z < 100)
+    //     f_color = vec4(0.0, 0.0, 0.5, 1.0);
+    // else
+    //     f_color = vec4(fragColor, 1.0);
+
+    // if ( pointGrad.x < 10)
+    //     f_color = vec4(0.5, 0.0, 0.0, 1.0);
+    // else if (pointGrad.y < 10)
+    //     f_color = vec4(0.0, 0.5, 0.0, 1.0);
+    // else if (pointGrad.z < 10)
+    //     f_color = vec4(0.0, 0.0, 0.5, 1.0);
+    // else
+    //     // f_color = vec4(1.0, 1.0, 1.0, 1.0);
+    //     f_color = vec4(fragColor, 1.0);
+
+
+    // if( points[1][0] <= gl_FragCoord.x)
+    //     f_color = vec4(1.0, 0.0, 0.0, 1.0);
+    // else
+    //     f_color = vec4(0.0, 1.0, 0.0, 1.0);
+
 
     // if(gl_FragCoord.x < 400)
     //     f_color = vec4(1.0, 0.0, 0.0, 1.0);
@@ -146,7 +219,6 @@ pub fn select_physical_device<'a>(
     surface: Arc<Surface<Window>>,
     device_extensions: &DeviceExtensions,
 ) -> (PhysicalDevice<'a>, QueueFamily<'a>) {
-
     let (physical_device, queue_family) = PhysicalDevice::enumerate(&instance)
         .filter(|&p| p.supported_extensions().is_superset_of(&device_extensions))
         .filter_map(|p| {
@@ -212,13 +284,13 @@ fn get_pipeline(
     viewport: Viewport,
     windows_size: PhysicalSize<u32>,
 ) -> Arc<GraphicsPipeline> {
-    let consts = MySpecConstants{
+    let consts = MySpecConstants {
         wight: windows_size.width,
         height: windows_size.height,
     };
     GraphicsPipeline::start()
         .vertex_input_state(BuffersDefinition::new().vertex::<Vertex>())
-        .vertex_shader(vs.entry_point("main").unwrap(), consts.clone() )
+        .vertex_shader(vs.entry_point("main").unwrap(), consts.clone())
         .input_assembly_state(InputAssemblyState::new())
         .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport]))
         // .geometry_shader(fs.entry_point("main").unwrap(), ())
@@ -227,7 +299,6 @@ fn get_pipeline(
         .build(device.clone())
         .unwrap()
 }
-
 
 
 fn get_command_buffers(
@@ -336,61 +407,65 @@ fn main() {
     vulkano::impl_vertex!(Vertex, position);
 
     let vertex1 = Vertex {
-        position: [-0.5, -0.5, 0.0],
-    };
-    let vertex2 = Vertex {
-        position: [-0.6, -0.1, 1.0],
-    };
-    let vertex3 = Vertex {
-        position: [-0.1, 0.2, 2.0],
+        position: [
+            [-0.5, -0.5],
+            [-0.6, -0.1],
+            [-0.1, 0.2]
+        ],
     };
     let vertex4 = Vertex {
-        position: [0.5, 0.5, 0.0],
-    };
-    let vertex5 = Vertex {
-        position: [0.5, 0.1, 1.0],
-    };
-    let vertex6 = Vertex {
-        position: [0.1, 0.1, 2.0],
+        position: [
+            [0.5, 0.5],
+            [0.5, 0.1],
+            [0.1, 0.1],
+        ],
     };
     let vertex7 = Vertex {
-        position: [-0.5, -0.5, 0.0],
+        position: [
+            [-0.5, -0.5],
+            [-0.5, -0.9],
+            [-0.9, -0.9],
+        ],
     };
-    let vertex8 = Vertex {
-        position: [-0.5, -0.9, 1.0],
-    };
-    let vertex9 = Vertex {
-        position: [-0.9, -0.9, 2.0],
-    };
-
     let vertex10 = Vertex {
-        position: [0.9, -0.5, 0.0],
-    };
-    let vertex11 = Vertex {
-        position: [0.5, -0.9, 1.0],
-    };
-    let vertex12 = Vertex {
-        position: [0.9, -0.9, 2.0],
+        position: [
+            [0.9, -0.5],
+            [0.5, -0.9],
+            [0.9, -0.9],
+        ],
     };
     let vertex13 = Vertex {
-        position: [-0.5, 0.9, 0.0],
+        position: [
+            [-0.5, 0.9],
+            [-0.5, 0.5],
+            [-0.9, 0.5]
+        ],
     };
-    let vertex14 = Vertex {
-        position: [-0.5, 0.5, 1.0],
-    };
-    let vertex15 = Vertex {
-        position: [-0.9, 0.5, 2.0],
-    };
+    let vertex2 = vertex1.clone();
+    let vertex3 = vertex1.clone();
+
+    let vertex5 = vertex4.clone();
+    let vertex6 = vertex4.clone();
+
+    let vertex8 = vertex7.clone();
+    let vertex9 = vertex7.clone();
+
+    let vertex11 = vertex10.clone();
+    let vertex12 = vertex10.clone();
+
+    let vertex14 = vertex13.clone();
+    let vertex15 = vertex13.clone();
+
     let vertex_buffer = CpuAccessibleBuffer::from_iter(
         device.clone(),
         BufferUsage::vertex_buffer(),
         false,
         vec![
-            vertex1, vertex2, vertex3,
-            vertex4, vertex5, vertex6,
-            vertex7, vertex8, vertex9,
-            vertex10, vertex11, vertex12,
-            vertex13, vertex14, vertex15,
+            vertex1, vertex2,vertex3,
+            vertex4,vertex5,vertex6,
+            vertex7,vertex8,vertex9,
+            vertex10, vertex11,vertex12,
+            vertex13, vertex14,vertex15,
         ].into_iter(),
     )
         .unwrap();
