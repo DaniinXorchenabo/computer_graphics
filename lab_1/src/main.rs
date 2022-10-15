@@ -437,6 +437,12 @@ fn main() {
 
     vulkano::impl_vertex!(Vertex, position, move_matrix, contour, contour_colors, point_colors);
 
+    // points: [[f32; 2]; 3],
+    // contour: Option<[f32; 3]>,
+    // point_colors: Option<[[f32; 4]; 3]>,
+    // point_color: Option<[f32; 4]>,
+    // contour_color: Option<[f32; 4]>,
+    // contour_colors: Option<[[f32; 4]; 3]>,
     let figure1 = Figure::new(
         vec![
             Vertex::new(
@@ -445,28 +451,28 @@ fn main() {
                     [-0.6, -0.1],
                     [-0.1, 0.2]
                 ],
-                None, None, None, None, None),
+                Some([10.0, 20.0, 0.0]), None, Some([1.0, 0.0, 0.0, 1.0]), None, None),
             Vertex::new(
                 [
                     [0.5, 0.5],
                     [0.5, 0.1],
                     [0.1, 0.1],
                 ],
-                None, None, None, None, None),
+                Some([10.0, 10.0, 10.0]), None, None, None, Some([[1.0, 1.0, 0.0, 1.0], [0.0, 1.0, 1.0, 1.0], [1.0, 0.0, 1.0, 1.0]])),
             Vertex::new(
                 [
                     [-0.5, -0.5],
                     [-0.5, -0.9],
                     [-0.9, -0.9],
                 ],
-                None, None, None, None, None),
+                None, Some([[1.0, 0.0, 0.0, 1.0], [0.0, 1.0, 0.0, 1.0], [0.0, 0.0, 1.0, 1.0]]), None, None, None),
             Vertex::new(
                 [
                     [0.9, -0.5],
                     [0.5, -0.9],
                     [0.9, -0.9],
                 ],
-                None, None, None, None, None),
+                None, Some([[1.0, 0.0, 1.0, 1.0], [0.0, 1.0, 0.0, 1.0], [0.0, 1.0, 1.0, 1.0]]), None, None, None),
             Vertex::new(
                 [
                     [-0.5, 0.9],
