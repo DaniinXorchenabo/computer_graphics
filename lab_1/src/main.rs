@@ -72,9 +72,80 @@ unsafe impl SpecializationConstants for MySpecConstants {
 
 #[repr(C)]
 #[derive(Default, Copy, Clone, Zeroable, Pod)]
-struct Vertex {
+pub struct Vertex {
     position: [[f32; 2]; 3],
+    move_matrix: [[f32; 3]; 3],
+    contour: [f32; 3],
+    contour_colors: [[f32; 4]; 3],
+    point_colors: [[f32; 4]; 3],
 }
+
+impl Vertex {
+    pub fn new(
+        points: [[f32; 2]; 3],
+        contour: Option<[f32; 3]>,
+        point_colors: Option<[[f32; 4]; 3]>,
+        point_color: Option<[f32; 4]>,
+        contour_color: Option<[f32; 4]>,
+        contour_colors: Option<[[f32; 4]; 3]>,
+    ) -> Self {
+        Vertex {
+            position: points,
+            move_matrix: [[1.0, 0.0, 0.0, ], [0.0, 1.0, 0.0, ], [0.0, 0.0, 1.0, ]],
+            contour: match contour {
+                Some(x) => x,
+                None => [1.0, 1.0, 1.0],
+            },
+            contour_colors: match (contour_colors, contour_color) {
+                (Some(x), _) => x,
+                (None, Some(y)) => [y.clone(), y.clone(), y],
+                (_, _) => [[0.0, 0.0, 0.0, 1.0], [0.0, 0.0, 0.0, 1.0], [0.0, 0.0, 0.0, 1.0]],
+            },
+            point_colors: match (point_colors, point_color) {
+                (Some(x), _) => x,
+                (None, Some(y)) => [y.clone(), y.clone(), y],
+                (_, _) => [[1.0, 1.0, 1.0, 0.0], [1.0, 1.0, 1.0, 0.0], [1.0, 1.0, 1.0, 0.0]],
+            },
+        }
+    }
+}
+
+#[derive(Default,  Clone)]
+pub struct Figure {
+    polygons: Vec<Vertex>,
+    move_matrix: [[f32; 3]; 3],
+    _changed: bool,
+}
+
+impl Figure {
+    pub fn new(new_polygons: Vec<Vertex>) -> Self {
+
+        let mut real_polygons = Vec::new();
+        let default_matrix = [[1.0, 0.0, 0.0, ], [0.0, 1.0, 0.0, ], [0.0, 0.0, 1.0, ]];
+        for vertex in new_polygons {
+            // vertex.move_matrix = default_matrix.clone();
+            real_polygons.push(vertex.clone());
+            real_polygons.push(vertex.clone());
+            real_polygons.push(vertex.clone());
+        }
+
+        Figure {
+            polygons: real_polygons,
+            move_matrix: default_matrix,
+            _changed: false,
+        }
+    }
+
+    fn get_vertex(&self) -> Vec<Vertex> {
+        if self._changed {
+            self.polygons.clone()
+        } else {
+            self.polygons.clone()
+        }
+    }
+}
+
+
 
 //3189 -- 1 1046 -- 2  610 -- 3 409 -- 4  286 -- 5 210 -- 6 140 -- 7
 mod vs {
@@ -92,19 +163,21 @@ layout (constant_id = 0) const int WIGHT = 64;
 layout (constant_id = 1) const int HEIGHT = 64;
 
 layout(location = 0) in vec2[3] position;
-layout(location = 1) out vec3 fragColor;
-//layout(location = 2) out vec3 pointGrad;
-layout(location = 4) out vec3 pointXGrad;
-layout(location = 5) out vec3 pointYGrad;
+layout(location = 3) in vec3[3] move_matrix;
+layout(location = 6) in float[3] contour;
+layout(location = 9) in vec4[3] contour_colors;
+layout(location = 12) in vec4[3] point_colors;
 
-layout(location = 6) out float points[3][2] ;
+layout(location = 15) out vec4 fragColor;
+layout(location = 16) out vec3 contour_size;
+
+layout(location = 19) out float points[3][2] ;
+layout(location = 25) out vec4[3] contour_colors_fr;
+
 
 
 
 void main() {
-    // points[ gl_VertexIndex % 3 ][0] = position.x;
-    // points[ gl_VertexIndex % 3 ][1] = position.y;
-
     float c_x = position[gl_VertexIndex % 3].x;
     float c_y = position[gl_VertexIndex % 3].y;
 
@@ -115,19 +188,11 @@ void main() {
     points[ 2 ][0] = ((position[2].x + 1) / 2) * WIGHT ;
     points[ 2 ][1] = ((1 * position[2].y + 1) / 2) * HEIGHT;
 
-    // if (gl_VertexIndex == 0)
-    //     gl_Position = vec4(WIGHT / 800, HEIGHT / 800, 0.0, 1.0);
-    // else
-        gl_Position = vec4(c_x, c_y, 0.0, 1.0);
-    fragColor = colors[ gl_VertexIndex % 3 ];
-    // gl_PointSize = gl_Position.z;
-    // pointGrad = sqrt(pow(((position.x + 1) / 2 * WIGHT), 2) + pow(((-1 * position.y + 1) / 2 * HEIGHT), 2)) * colors[ gl_VertexIndex % 3 ];
+    gl_Position = vec4(c_x, c_y, 0.0, 1.0);
+    contour_size = vec3(contour[0], contour[1], contour[2]);
+    contour_colors_fr = contour_colors;
 
-    // pointXGrad = ((position.x + 1) / 2) * WIGHT * vec3(1.0, 1.0, 1.0);
-    // pointYGrad = ((1 * position.y + 1) / 2) * HEIGHT * vec3(1.0, 1.0, 1.0);
-
-    pointXGrad = ((c_x + 1) / 2) * WIGHT * colors[ gl_VertexIndex % 3 ];
-    pointYGrad = ((-1 * c_y + 1) / 2) * HEIGHT * colors[ gl_VertexIndex % 3 ];
+    fragColor = point_colors[ gl_VertexIndex % 3 ];
 
 }"
     }
@@ -144,15 +209,11 @@ layout (constant_id = 0) const int WIGHT = 64;
 layout (constant_id = 1) const int HEIGHT = 64;
 
 layout(location = 0) out vec4 f_color;
-layout(location = 1) in vec3 fragColor;
-// layout(location = 2) in vec3 pointGrad;
-layout(location = 4) in vec3 pointXGrad;
-layout(location = 5) in vec3 pointYGrad;
+layout(location = 15) in vec4 fragColor;
+layout(location = 16) in vec3 contour_size;
 
-layout(location = 6) in float points[3][2];
-
-
-
+layout(location = 19) in float points[3][2];
+layout(location = 25) in vec4[3] contour_colors_fr;
 
 
 void main() {
@@ -168,48 +229,18 @@ void main() {
     float B3 = points[0][0] - points[2][0];
     float C3 = points[2][0] * points[0][1] - points[0][0] * points[2][1];
 
-    if (abs( A1 * gl_FragCoord.x   + B1 * gl_FragCoord.y + C1) / sqrt(A1*A1 + B1*B1) < 10 )
-        f_color = vec4(0.5, 0.0, 0.0, 1.0);
+    if (abs( A1 * gl_FragCoord.x   + B1 * gl_FragCoord.y + C1) / sqrt(A1*A1 + B1*B1) < contour_size.x )
+        f_color = contour_colors_fr[0];
 
-    else if (abs( A2 * gl_FragCoord.x   + B2 * gl_FragCoord.y + C2) / sqrt(A2*A2 + B2*B2) < 10)
-        f_color = vec4(0.0, 0.5, 0.0, 1.0);
+    else if (abs( A2 * gl_FragCoord.x   + B2 * gl_FragCoord.y + C2) / sqrt(A2*A2 + B2*B2) < contour_size.y)
+        f_color = contour_colors_fr[1];
 
-    else if (abs( A3 * gl_FragCoord.x   + B3 * gl_FragCoord.y + C3) / sqrt(A3*A3 + B3*B3) < 10)
-        f_color = vec4(0.0, 0.0, 0.5, 1.0);
+    else if (abs( A3 * gl_FragCoord.x   + B3 * gl_FragCoord.y + C3) / sqrt(A3*A3 + B3*B3) < contour_size.z)
+        f_color = contour_colors_fr[2];
 
     else
-        f_color = vec4(fragColor, 1.0);
+        f_color = fragColor;
 
-    // if ( pointXGrad.x * pointXGrad.x   + pointYGrad.x * pointYGrad.x < 100 )
-    //     f_color = vec4(0.5, 0.0, 0.0, 1.0);
-    // else if (pointXGrad.y * pointXGrad.y + pointYGrad.y * pointYGrad.y < 100)
-    //     f_color = vec4(0.0, 0.5, 0.0, 1.0);
-    // else if (pointXGrad.z * pointXGrad.z + pointYGrad.z * pointYGrad.z < 100)
-    //     f_color = vec4(0.0, 0.0, 0.5, 1.0);
-    // else
-    //     f_color = vec4(fragColor, 1.0);
-
-    // if ( pointGrad.x < 10)
-    //     f_color = vec4(0.5, 0.0, 0.0, 1.0);
-    // else if (pointGrad.y < 10)
-    //     f_color = vec4(0.0, 0.5, 0.0, 1.0);
-    // else if (pointGrad.z < 10)
-    //     f_color = vec4(0.0, 0.0, 0.5, 1.0);
-    // else
-    //     // f_color = vec4(1.0, 1.0, 1.0, 1.0);
-    //     f_color = vec4(fragColor, 1.0);
-
-
-    // if( points[1][0] <= gl_FragCoord.x)
-    //     f_color = vec4(1.0, 0.0, 0.0, 1.0);
-    // else
-    //     f_color = vec4(0.0, 1.0, 0.0, 1.0);
-
-
-    // if(gl_FragCoord.x < 400)
-    //     f_color = vec4(1.0, 0.0, 0.0, 1.0);
-    // else
-    //     f_color = vec4(0.0, 1.0, 0.0, 1.0);
 }"
     }
 }
@@ -404,71 +435,119 @@ fn main() {
     let render_pass = get_render_pass(device.clone(), swapchain.clone());
     let framebuffers = get_framebuffers(&images, render_pass.clone());
 
-    vulkano::impl_vertex!(Vertex, position);
+    vulkano::impl_vertex!(Vertex, position, move_matrix, contour, contour_colors, point_colors);
 
-    let vertex1 = Vertex {
-        position: [
-            [-0.5, -0.5],
-            [-0.6, -0.1],
-            [-0.1, 0.2]
-        ],
-    };
-    let vertex4 = Vertex {
-        position: [
-            [0.5, 0.5],
-            [0.5, 0.1],
-            [0.1, 0.1],
-        ],
-    };
-    let vertex7 = Vertex {
-        position: [
-            [-0.5, -0.5],
-            [-0.5, -0.9],
-            [-0.9, -0.9],
-        ],
-    };
-    let vertex10 = Vertex {
-        position: [
-            [0.9, -0.5],
-            [0.5, -0.9],
-            [0.9, -0.9],
-        ],
-    };
-    let vertex13 = Vertex {
-        position: [
-            [-0.5, 0.9],
-            [-0.5, 0.5],
-            [-0.9, 0.5]
-        ],
-    };
-    let vertex2 = vertex1.clone();
-    let vertex3 = vertex1.clone();
-
-    let vertex5 = vertex4.clone();
-    let vertex6 = vertex4.clone();
-
-    let vertex8 = vertex7.clone();
-    let vertex9 = vertex7.clone();
-
-    let vertex11 = vertex10.clone();
-    let vertex12 = vertex10.clone();
-
-    let vertex14 = vertex13.clone();
-    let vertex15 = vertex13.clone();
+    let figure1 = Figure::new(
+        vec![
+            Vertex::new(
+                [
+                    [-0.5, -0.5],
+                    [-0.6, -0.1],
+                    [-0.1, 0.2]
+                ],
+                None, None, None, None, None),
+            Vertex::new(
+                [
+                    [0.5, 0.5],
+                    [0.5, 0.1],
+                    [0.1, 0.1],
+                ],
+                None, None, None, None, None),
+            Vertex::new(
+                [
+                    [-0.5, -0.5],
+                    [-0.5, -0.9],
+                    [-0.9, -0.9],
+                ],
+                None, None, None, None, None),
+            Vertex::new(
+                [
+                    [0.9, -0.5],
+                    [0.5, -0.9],
+                    [0.9, -0.9],
+                ],
+                None, None, None, None, None),
+            Vertex::new(
+                [
+                    [-0.5, 0.9],
+                    [-0.5, 0.5],
+                    [-0.9, 0.5]
+                ],
+                None, None, None, None, None),
+        ]);
 
     let vertex_buffer = CpuAccessibleBuffer::from_iter(
         device.clone(),
         BufferUsage::vertex_buffer(),
         false,
-        vec![
-            vertex1, vertex2,vertex3,
-            vertex4,vertex5,vertex6,
-            vertex7,vertex8,vertex9,
-            vertex10, vertex11,vertex12,
-            vertex13, vertex14,vertex15,
-        ].into_iter(),
+        figure1.get_vertex().into_iter(),
     )
         .unwrap();
+
+
+    // let vertex1 = Vertex::new(
+    //     [
+    //         [-0.5, -0.5],
+    //         [-0.6, -0.1],
+    //         [-0.1, 0.2]
+    //     ],
+    // );
+    // let vertex4 = Vertex::new(
+    //     [
+    //         [0.5, 0.5],
+    //         [0.5, 0.1],
+    //         [0.1, 0.1],
+    //     ],
+    // );
+    // let vertex7 = Vertex::new(
+    //     [
+    //         [-0.5, -0.5],
+    //         [-0.5, -0.9],
+    //         [-0.9, -0.9],
+    //     ],
+    // );
+    // let vertex10 = Vertex::new(
+    //     [
+    //         [0.9, -0.5],
+    //         [0.5, -0.9],
+    //         [0.9, -0.9],
+    //     ],
+    // );
+    // let vertex13 = Vertex::new(
+    //     [
+    //         [-0.5, 0.9],
+    //         [-0.5, 0.5],
+    //         [-0.9, 0.5]
+    //     ],
+    // );
+    // let vertex2 = vertex1.clone();
+    // let vertex3 = vertex1.clone();
+    //
+    // let vertex5 = vertex4.clone();
+    // let vertex6 = vertex4.clone();
+    //
+    // let vertex8 = vertex7.clone();
+    // let vertex9 = vertex7.clone();
+    //
+    // let vertex11 = vertex10.clone();
+    // let vertex12 = vertex10.clone();
+    //
+    // let vertex14 = vertex13.clone();
+    // let vertex15 = vertex13.clone();
+    //
+    // let vertex_buffer = CpuAccessibleBuffer::from_iter(
+    //     device.clone(),
+    //     BufferUsage::vertex_buffer(),
+    //     false,
+    //     vec![
+    //         vertex1, vertex2, vertex3,
+    //         vertex4, vertex5, vertex6,
+    //         vertex7, vertex8, vertex9,
+    //         vertex10, vertex11, vertex12,
+    //         vertex13, vertex14, vertex15,
+    //     ].into_iter(),
+    // )
+    //     .unwrap();
 
     println!("{}", vertex_buffer.len());
 
@@ -610,6 +689,13 @@ fn main() {
             };
 
             previous_fence_i = image_i;
+        }
+        WinitEvent::WindowEvent {
+            event: WindowEvent::ReceivedCharacter(_),
+            ..
+        } => {
+            // https://docs.rs/winit/latest/winit/event/enum.WindowEvent.html#variant.ReceivedCharacter
+            println!("+");
         }
         _ => (),
     });
