@@ -37,7 +37,7 @@ use vulkano::swapchain::{
 use vulkano::sync::{self, FenceSignalFuture, FlushError, GpuFuture};
 use vulkano_win::VkSurfaceBuild;
 use winit::dpi::PhysicalSize;
-use winit::event::{Event as WinitEvent, WindowEvent};
+use winit::event::{Event as WinitEvent, Event, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ControlFlow as WinitControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
 
@@ -91,7 +91,7 @@ impl Vertex {
     ) -> Self {
         Vertex {
             position: points,
-            move_matrix: [[1.0, 0.0, 0.0, ], [0.0, 1.0, 0.0, ], [0.0, 0.0, 1.0, ]],
+            move_matrix: [[1.0, 0.0, 0.0 ], [0.0, 1.0, 0.0 ], [0.0, 0.0, 1.0 ]],
             contour: match contour {
                 Some(x) => x,
                 None => [1.0, 1.0, 1.0],
@@ -121,7 +121,7 @@ impl Figure {
     pub fn new(new_polygons: Vec<Vertex>) -> Self {
 
         let mut real_polygons = Vec::new();
-        let default_matrix = [[1.0, 0.0, 0.0, ], [0.0, 1.0, 0.0, ], [0.0, 0.0, 1.0, ]];
+        let default_matrix = [[1.0, 0.0, 0.0 ], [0.0, 1.0, 0.0 ], [0.0, 0.0, 1.0 ]];
         for vertex in new_polygons {
             // vertex.move_matrix = default_matrix.clone();
             real_polygons.push(vertex.clone());
@@ -136,9 +136,15 @@ impl Figure {
         }
     }
 
-    fn get_vertex(&self) -> Vec<Vertex> {
+    fn get_vertex(&mut self) -> Vec<Vertex> {
         if self._changed {
-            self.polygons.clone()
+            self._changed = false;
+            let mut res = self.polygons.clone();
+            for vertex in &mut res{
+                vertex.move_matrix = self.move_matrix.clone()
+            }
+            res
+            // self.polygons.clone()
         } else {
             self.polygons.clone()
         }
@@ -163,7 +169,7 @@ layout (constant_id = 0) const int WIGHT = 64;
 layout (constant_id = 1) const int HEIGHT = 64;
 
 layout(location = 0) in vec2[3] position;
-layout(location = 3) in vec3[3] move_matrix;
+layout(location = 3) in mat3 move_matrix;
 layout(location = 6) in float[3] contour;
 layout(location = 9) in vec4[3] contour_colors;
 layout(location = 12) in vec4[3] point_colors;
@@ -171,8 +177,10 @@ layout(location = 12) in vec4[3] point_colors;
 layout(location = 15) out vec4 fragColor;
 layout(location = 16) out vec3 contour_size;
 
-layout(location = 19) out float points[3][2] ;
-layout(location = 25) out vec4[3] contour_colors_fr;
+// layout(location = 19) out float points[3][3] ;
+layout(location = 19) out mat3 points ;
+
+layout(location = 29) out vec4[3] contour_colors_fr;
 
 
 
@@ -181,18 +189,72 @@ void main() {
     float c_x = position[gl_VertexIndex % 3].x;
     float c_y = position[gl_VertexIndex % 3].y;
 
-    points[ 0 ][0] = ((position[0].x + 1) / 2) * WIGHT ;
-    points[ 0 ][1] = ((1 * position[0].y + 1) / 2) * HEIGHT;
-    points[ 1 ][0] = ((position[1].x + 1) / 2) * WIGHT ;
-    points[ 1 ][1] = ((1 * position[1].y + 1) / 2) * HEIGHT;
-    points[ 2 ][0] = ((position[2].x + 1) / 2) * WIGHT ;
-    points[ 2 ][1] = ((1 * position[2].y + 1) / 2) * HEIGHT;
+    vec3 pos_m = vec3(c_x, c_y, 1.0)  * move_matrix ;
 
-    gl_Position = vec4(c_x, c_y, 0.0, 1.0);
+    vec3 pos0 = vec3(position[0].x, position[0].y, 1.0) * move_matrix ;
+    vec3 pos1 = vec3(position[1].x, position[1].y, 1.0) * move_matrix ;
+    vec3 pos2 =  vec3(position[2].x, position[2].y, 1.0) * move_matrix;
+
+    // c_x = pos_m.x;
+    // c_y = pos_m.y;
+
+    // points = [
+    //             [((position[0].x + 1) / 2) * WIGHT, ((1 * position[0].y + 1) / 2) * HEIGHT, 1.0],
+    //             [((position[1].x + 1) / 2) * WIGHT, ((1 * position[1].y + 1) / 2) * HEIGHT, 1.0],
+    //             [((position[2].x + 1) / 2) * WIGHT, ((1 * position[2].y + 1) / 2) * HEIGHT, 1.0]
+    //         ];
+
+    points[ 0 ][0] = ((pos0.x + 1) / 2) * WIGHT ;
+    points[ 0 ][1] = ((1 * pos0.y + 1) / 2) * HEIGHT;
+    points[ 0 ][2] = 1.0;
+
+    points[ 1 ][0] = ((pos1.x + 1) / 2) * WIGHT ;
+    points[ 1 ][1] = ((1 * pos1.y + 1) / 2) * HEIGHT;
+    points[ 1 ][2] = 1.0;
+
+    points[ 2 ][0] = ((pos2.x + 1) / 2) * WIGHT ;
+    points[ 2 ][1] = ((1 * pos2.y + 1) / 2) * HEIGHT;
+    points[ 2 ][2] = 1.0;
+
+    // points = points * move_matrix;
+
+
+    mat3 test_mat;
+
+    test_mat[0][0] = 1.0;
+    test_mat[0][1] = 0.0;
+    test_mat[0][2] = 0.0;
+
+    test_mat[1][0] = 0.0;
+    test_mat[1][1] = 1.0;
+    test_mat[1][2] = 0.0;
+
+    test_mat[2][0] = 0.0;
+    test_mat[2][1] = 0.0;
+    test_mat[2][2] = 1.0;
+
+
+    // vec3 pos = test_mat * vec3(c_x, c_y, 1.0);
+
+    // gl_Position = vec4(pos.x, pos.y, pos.z, 1.0);
+    gl_Position = vec4(pos_m.x, pos_m.y, 0, 1.0);
+
+    // gl_Position = vec4(c_x, c_y, 0.0, 1.0);
     contour_size = vec3(contour[0], contour[1], contour[2]);
     contour_colors_fr = contour_colors;
 
     fragColor = point_colors[ gl_VertexIndex % 3 ];
+
+
+    // if (pos.x == pos_m.x){
+    //     fragColor.x = 0.5;
+    // }
+    // if (pos.y == pos_m.y){
+    //     fragColor.y = 0.5;
+    // }
+    // if (pos.z == pos_m.z){
+    //     fragColor.z = 0.5;
+    // }
 
 }"
     }
@@ -212,8 +274,9 @@ layout(location = 0) out vec4 f_color;
 layout(location = 15) in vec4 fragColor;
 layout(location = 16) in vec3 contour_size;
 
-layout(location = 19) in float points[3][2];
-layout(location = 25) in vec4[3] contour_colors_fr;
+// layout(location = 19) in float points[3][3];
+layout(location = 19) in mat3 points;
+layout(location = 29) in vec4[3] contour_colors_fr;
 
 
 void main() {
@@ -437,13 +500,7 @@ fn main() {
 
     vulkano::impl_vertex!(Vertex, position, move_matrix, contour, contour_colors, point_colors);
 
-    // points: [[f32; 2]; 3],
-    // contour: Option<[f32; 3]>,
-    // point_colors: Option<[[f32; 4]; 3]>,
-    // point_color: Option<[f32; 4]>,
-    // contour_color: Option<[f32; 4]>,
-    // contour_colors: Option<[[f32; 4]; 3]>,
-    let figure1 = Figure::new(
+    let mut figure1 = Figure::new(
         vec![
             Vertex::new(
                 [
@@ -482,78 +539,13 @@ fn main() {
                 None, None, None, None, None),
         ]);
 
-    let vertex_buffer = CpuAccessibleBuffer::from_iter(
+    let mut vertex_buffer = CpuAccessibleBuffer::from_iter(
         device.clone(),
         BufferUsage::vertex_buffer(),
         false,
         figure1.get_vertex().into_iter(),
     )
         .unwrap();
-
-
-    // let vertex1 = Vertex::new(
-    //     [
-    //         [-0.5, -0.5],
-    //         [-0.6, -0.1],
-    //         [-0.1, 0.2]
-    //     ],
-    // );
-    // let vertex4 = Vertex::new(
-    //     [
-    //         [0.5, 0.5],
-    //         [0.5, 0.1],
-    //         [0.1, 0.1],
-    //     ],
-    // );
-    // let vertex7 = Vertex::new(
-    //     [
-    //         [-0.5, -0.5],
-    //         [-0.5, -0.9],
-    //         [-0.9, -0.9],
-    //     ],
-    // );
-    // let vertex10 = Vertex::new(
-    //     [
-    //         [0.9, -0.5],
-    //         [0.5, -0.9],
-    //         [0.9, -0.9],
-    //     ],
-    // );
-    // let vertex13 = Vertex::new(
-    //     [
-    //         [-0.5, 0.9],
-    //         [-0.5, 0.5],
-    //         [-0.9, 0.5]
-    //     ],
-    // );
-    // let vertex2 = vertex1.clone();
-    // let vertex3 = vertex1.clone();
-    //
-    // let vertex5 = vertex4.clone();
-    // let vertex6 = vertex4.clone();
-    //
-    // let vertex8 = vertex7.clone();
-    // let vertex9 = vertex7.clone();
-    //
-    // let vertex11 = vertex10.clone();
-    // let vertex12 = vertex10.clone();
-    //
-    // let vertex14 = vertex13.clone();
-    // let vertex15 = vertex13.clone();
-    //
-    // let vertex_buffer = CpuAccessibleBuffer::from_iter(
-    //     device.clone(),
-    //     BufferUsage::vertex_buffer(),
-    //     false,
-    //     vec![
-    //         vertex1, vertex2, vertex3,
-    //         vertex4, vertex5, vertex6,
-    //         vertex7, vertex8, vertex9,
-    //         vertex10, vertex11, vertex12,
-    //         vertex13, vertex14, vertex15,
-    //     ].into_iter(),
-    // )
-    //     .unwrap();
 
     println!("{}", vertex_buffer.len());
 
@@ -701,7 +693,98 @@ fn main() {
             ..
         } => {
             // https://docs.rs/winit/latest/winit/event/enum.WindowEvent.html#variant.ReceivedCharacter
-            println!("+");
+            println!("+ {:}", figure1.move_matrix[0][2]);
+            let mut changes = true;
+            match event {
+                WinitEvent::WindowEvent {
+                    event: WindowEvent::ReceivedCharacter('a'),
+                    ..
+                } => {
+                    figure1.move_matrix[0][2] -= 0.1;
+                    figure1._changed = true;
+
+                }
+                WinitEvent::WindowEvent {
+                    event: WindowEvent::ReceivedCharacter('d'),
+                    ..
+                } => {
+                    figure1.move_matrix[0][2] += 0.1;
+                    figure1._changed = true;
+
+                }
+                WinitEvent::WindowEvent {
+                    event: WindowEvent::ReceivedCharacter('w'),
+                    ..
+                } => {
+                    figure1.move_matrix[1][2] -= 0.1;
+                    figure1._changed = true;
+
+                }
+                WinitEvent::WindowEvent {
+                    event: WindowEvent::ReceivedCharacter('s'),
+                    ..
+                } => {
+                    figure1.move_matrix[1][2] += 0.1;
+                    figure1._changed = true;
+
+                }
+                _ => {
+                    changes = false;
+                }
+            }
+            if changes{
+                recreate_swapchain = true;
+                window_resized = true;
+
+                vertex_buffer = CpuAccessibleBuffer::from_iter(
+                    device.clone(),
+                    BufferUsage::vertex_buffer(),
+                    false,
+                    figure1.get_vertex().into_iter(),
+                )
+                    .unwrap();
+
+            }
+        }
+        WinitEvent::WindowEvent{
+            event: WindowEvent::MouseWheel {
+                delta, ..
+            },
+            ..
+        } => {
+
+            match delta {
+                MouseScrollDelta::LineDelta(x, y) => {
+
+                    println!("* x={:}, y={:}", x, y);
+                    if y > 0.0 {
+                        figure1.move_matrix[0][0] *= 1.0 + y / 10.0;
+                        figure1.move_matrix[1][1] *= 1.0 + y / 10.0;
+                    } else if y < 0.0 {
+                        figure1.move_matrix[0][0] /= 1.0 - y / 10.0;
+                        figure1.move_matrix[1][1] /= 1.0 - y / 10.0;
+                    }
+                    // figure1.move_matrix[0][0] *= 1.1;
+                    figure1._changed = true;
+
+                }
+                _ => {}
+            }
+
+            if figure1._changed {
+                recreate_swapchain = true;
+                window_resized = true;
+
+                vertex_buffer = CpuAccessibleBuffer::from_iter(
+                    device.clone(),
+                    BufferUsage::vertex_buffer(),
+                    false,
+                    figure1.get_vertex().into_iter(),
+                )
+                    .unwrap();
+            }
+
+
         }
         _ => (),
     });
