@@ -354,17 +354,17 @@ void main() {
 
     mat3 test_mat;
 
-    test_mat[0][0] = 1.0;
-    test_mat[0][1] = 0.0;
-    test_mat[0][2] = 0.0;
-
-    test_mat[1][0] = 0.0;
-    test_mat[1][1] = 1.0;
-    test_mat[1][2] = 0.0;
-
-    test_mat[2][0] = 0.0;
-    test_mat[2][1] = 0.0;
-    test_mat[2][2] = 1.0;
+    // test_mat[0][0] = 1.0;
+    // test_mat[0][1] = 0.0;
+    // test_mat[0][2] = 0.0;
+    //
+    // test_mat[1][0] = 0.0;
+    // test_mat[1][1] = 1.0;
+    // test_mat[1][2] = 0.0;
+    //
+    // test_mat[2][0] = 0.0;
+    // test_mat[2][1] = 0.0;
+    // test_mat[2][2] = 1.0;
 
 
     // vec3 pos = test_mat * vec3(c_x, c_y, 1.0);
@@ -373,7 +373,11 @@ void main() {
     gl_Position = vec4(pos_m.x, pos_m.y, 0, 1.0);
 
     // gl_Position = vec4(c_x, c_y, 0.0, 1.0);
-    contour_size = vec3(contour[0], contour[1], contour[2]);
+    float board_size_mn =  (move_matrix[0][0] + move_matrix[1][1]) / 2;
+    contour_size = vec3(contour[0] == 0.0 ? 0.0: max( contour[0] * length(pos0.xyz - pos1.xyz) / length(position[0].xy - position[1].xy), 1.4),
+                        contour[1] == 0.0 ? 0.0: max( contour[1] * length(pos1.xyz - pos2.xyz) / length(position[1].xy - position[2].xy), 1.4),
+                        contour[2] == 0.0 ? 0.0: max( contour[2] * length(pos2.xyz - pos0.xyz) / length(position[2].xy - position[0].xy), 1.4));
+    // contour_size = vec3(contour[0], contour[1], contour[2]);
     contour_colors_fr = contour_colors;
 
     fragColor = point_colors[ gl_VertexIndex % 3 ];
