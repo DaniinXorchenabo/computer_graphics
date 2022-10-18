@@ -13,3 +13,4 @@ shaderc-sys = "0.8.0"
 image = "0.24"
 vulkano-win = "0.30.0"
 winit = "0.26"
+ndarray  = { version = "0.15.6", default-features = false }

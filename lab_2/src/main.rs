@@ -11,6 +11,10 @@
 //!
 //! It is not commented, as the explanations can be found in the guide itself.
 
+// use std::default::default;
+// use std::mem::zeroed;
+// use std::simd::f32x4;
+// use std::intrinsics::{cosf32, sinf32};
 // use std::ops::ControlFlow;
 use std::sync::Arc;
 
@@ -37,12 +41,18 @@ use vulkano::swapchain::{
 use vulkano::sync::{self, FenceSignalFuture, FlushError, GpuFuture};
 use vulkano_win::VkSurfaceBuild;
 use winit::dpi::PhysicalSize;
-use winit::event::{Event as WinitEvent, Event, MouseScrollDelta, WindowEvent};
+use winit::event::{Event as WinitEvent, Event, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ControlFlow as WinitControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
 
 use vulkano::shader::SpecializationConstants;
 use vulkano::shader::SpecializationMapEntry;
+
+// extern crate ndarray;
+
+use ndarray::{arr2, arr3,  Array2, array, Array};
+// use ndarray::{arr2, arr3,  Array2, array, Array};
+
 
 #[repr(C)]      // `#[repr(C)]` guarantees that the struct has a specific layout
 #[derive(Default, Copy, Clone)]
@@ -74,7 +84,8 @@ unsafe impl SpecializationConstants for MySpecConstants {
 #[derive(Default, Copy, Clone, Zeroable, Pod)]
 pub struct Vertex {
     position: [[f32; 2]; 3],
-    move_matrix: [[f32; 3]; 3],
+    // move_matrix: [[f32; 3]; 3],
+    move_matrix: [[f32; 4]; 4],
     contour: [f32; 3],
     contour_colors: [[f32; 4]; 3],
     point_colors: [[f32; 4]; 3],
@@ -91,7 +102,13 @@ impl Vertex {
     ) -> Self {
         Vertex {
             position: points,
-            move_matrix: [[1.0, 0.0, 0.0 ], [0.0, 1.0, 0.0 ], [0.0, 0.0, 1.0 ]],
+            move_matrix: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0]
+            ],
+            // move_matrix: [[1.0, 0.0, 0.0 ], [0.0, 1.0, 0.0 ], [0.0, 0.0, 1.0 ]],
             contour: match contour {
                 Some(x) => x,
                 None => [1.0, 1.0, 1.0],
@@ -110,18 +127,52 @@ impl Vertex {
     }
 }
 
-#[derive(Default,  Clone)]
+#[derive(Default, Clone)]
+pub struct Changed {
+    move_matrix: bool,
+    rotate_angels: bool,
+    scale: bool,
+}
+
+impl Changed {
+    pub fn new() -> Self {
+        Changed {
+            move_matrix: false,
+            rotate_angels: false,
+            scale: false,
+        }
+    }
+
+    pub fn any(&self) -> bool {
+        self.move_matrix | self.rotate_angels | self.scale
+    }
+}
+
+#[derive(Default, Clone)]
 pub struct Figure {
     polygons: Vec<Vertex>,
-    move_matrix: [[f32; 3]; 3],
-    _changed: bool,
+    // move_matrix: [[f32; 3]; 3],
+    change_matrix: Array2<f32>,
+
+    move_matrix: Array2<f32>,
+    rotate_angels: [f32; 3],
+    scale: [f32; 3],
+
+    _rotate_matrix: Array2<f32>,
+    _changed: Changed,
+    // _changed: bool
 }
 
 impl Figure {
     pub fn new(new_polygons: Vec<Vertex>) -> Self {
-
         let mut real_polygons = Vec::new();
         let default_matrix = [[1.0, 0.0, 0.0 ], [0.0, 1.0, 0.0 ], [0.0, 0.0, 1.0 ]];
+        // let  default_matrix :Array2<f32> = array![
+        //     [1.0, 0.0, 0.0, 1.0],
+        //     [0.0, 1.0, 0.0, 1.0],
+        //     [0.0, 0.0, 1.0, 1.0],
+        //     [0.0, 0.0, 0.0, 1.0]
+        // ];
         for vertex in new_polygons {
             // vertex.move_matrix = default_matrix.clone();
             real_polygons.push(vertex.clone());
@@ -129,19 +180,99 @@ impl Figure {
             real_polygons.push(vertex.clone());
         }
 
+
         Figure {
             polygons: real_polygons,
-            move_matrix: default_matrix,
-            _changed: false,
+            // move_matrix: default_matrix,
+            change_matrix: Array::eye(4),
+            move_matrix:  Array::eye(4),
+            rotate_angels: [0.0, 0.0, 0.0],
+            scale: [1.0, 1.0, 1.0],
+            _rotate_matrix:  Array::eye(4),
+            _changed: Changed::new(),
+            // _changed: false,
         }
     }
 
     fn get_vertex(&mut self) -> Vec<Vertex> {
-        if self._changed {
-            self._changed = false;
+        if self._changed.any() {
+            if self._changed.rotate_angels {
+                let (x, y, z) = (self.rotate_angels[0], self.rotate_angels[1], self.rotate_angels[2]);
+                let (a, b, c, d, e, f) = (f32::cos(x), f32::sin(x), f32::cos(y), f32::sin(y), f32::cos(z), f32::sin(z));
+                // self._rotate_matrix = array![
+                //     [c * e, -c * f, -d, 0.0],
+                //     [-b * d * e + a * f, b * d * f + a * e, -b * c, 0.0],
+                //     [a * d * e + b * f, -a * d * f + b * e, a * c, 0.0],
+                //     [0.0, 0.0, 0.0, 1.0]
+                // ];
+                // self._rotate_matrix = array![
+                //     [1.0, 0.0, 0.0, 0.0],
+                //     [0.0, a, -b, 0.0],
+                //     [0.0, b, a, 0.0],
+                //     [0.0, 0.0, 0.0, 1.0]
+                // ];
+                // self._rotate_matrix = array![ // ось Х
+                //     [1.0, 0.0, 0.0, 0.0],
+                //     [0.0, e, -f, 0.0],
+                //     [0.0, f, e, 0.0],
+                //     [0.0, 0.0, 0.0, 1.0]
+                // ];
+                self._rotate_matrix = array![
+                    [e, -f, 0.0, 0.0],
+                    [f, e, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0]
+                ];
+                // self._rotate_matrix = array![
+                //     [e, 0.0, -f, 0.0],
+                //     [0.0, 1.0, 0.0, 0.0],
+                //     [f, 0.0, e, 0.0],
+                //     [0.0, 0.0, 0.0, 1.0]
+                // ];
+            }
+
+
+            self._changed = Changed::new();
+                // self._changed = false;
+            self.change_matrix = array![
+                [self.scale[0], 0.0, 0.0, 0.0],
+                [0.0, self.scale[1], 0.0, 0.0],
+                [0.0, 0.0, self.scale[2], 0.0],
+                [0.0, 0.0, 0.0, 1.0]
+            ] ;
+
+
+            self.change_matrix = self.change_matrix.dot(&self.move_matrix);
+            // self.change_matrix = self.change_matrix.clone() * self.move_matrix.clone();
+
+            // self.change_matrix = self.change_matrix.clone() * self._rotate_matrix.clone();
+            self.change_matrix = self.change_matrix.dot(&self._rotate_matrix);
+
+            let mut loc_change_matrix:[[f32; 4]; 4] = [
+                [1.0, 0.0, 0.0, 1.0],
+                [0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0]
+            ];
+                // let mut loc_change_matrix:[[f32; 3]; 3] = [
+                //     [1.0, 0.0, 0.0],
+                //     [0.0, 1.0, 0.0],
+                //     [0.0, 0.0, 1.0]
+                // ];
+            // change_matrix
+
+            for ((i, j), item) in self.change_matrix.indexed_iter(){
+                loc_change_matrix[i][j] = item.clone();
+            }
+
+
             let mut res = self.polygons.clone();
-            for vertex in &mut res{
-                vertex.move_matrix = self.move_matrix.clone()
+
+
+
+            for vertex in &mut res {
+                // vertex.move_matrix = change_matrix.clone()
+                vertex.move_matrix = loc_change_matrix.clone()
             }
             res
             // self.polygons.clone()
@@ -150,7 +281,6 @@ impl Figure {
         }
     }
 }
-
 
 
 //3189 -- 1 1046 -- 2  610 -- 3 409 -- 4  286 -- 5 210 -- 6 140 -- 7
@@ -169,19 +299,16 @@ layout (constant_id = 0) const int WIGHT = 64;
 layout (constant_id = 1) const int HEIGHT = 64;
 
 layout(location = 0) in vec2[3] position;
-layout(location = 3) in mat3 move_matrix;
+// layout(location = 3) in mat3 move_matrix;
+layout(location = 4) out vec4 fragColor;
+layout(location = 5) out vec3 contour_size;
 layout(location = 6) in float[3] contour;
 layout(location = 9) in vec4[3] contour_colors;
 layout(location = 12) in vec4[3] point_colors;
-
-layout(location = 15) out vec4 fragColor;
-layout(location = 16) out vec3 contour_size;
-
+layout(location = 15) out mat3 points ;
 // layout(location = 19) out float points[3][3] ;
-layout(location = 19) out mat3 points ;
-
-layout(location = 29) out vec4[3] contour_colors_fr;
-
+layout(location = 19) out vec4[3] contour_colors_fr;
+layout(location = 22) in mat4 move_matrix;
 
 
 
@@ -189,11 +316,17 @@ void main() {
     float c_x = position[gl_VertexIndex % 3].x;
     float c_y = position[gl_VertexIndex % 3].y;
 
-    vec3 pos_m = vec3(c_x, c_y, 1.0)  * move_matrix ;
+    vec4 pos_m = vec4(c_x, c_y, 0.0, 1.0)  * move_matrix ;
 
-    vec3 pos0 = vec3(position[0].x, position[0].y, 1.0) * move_matrix ;
-    vec3 pos1 = vec3(position[1].x, position[1].y, 1.0) * move_matrix ;
-    vec3 pos2 =  vec3(position[2].x, position[2].y, 1.0) * move_matrix;
+    vec4 pos0 = vec4(position[0].x, position[0].y, 0.0, 1.0) * move_matrix ;
+    vec4 pos1 = vec4(position[1].x, position[1].y, 0.0, 1.0) * move_matrix ;
+    vec4 pos2 = vec4(position[2].x, position[2].y, 0.0, 1.0) * move_matrix;
+
+    // vec3 pos_m = vec3(c_x, c_y, 1.0)  * move_matrix ;
+    //
+    // vec3 pos0 = vec3(position[0].x, position[0].y, 1.0) * move_matrix ;
+    // vec3 pos1 = vec3(position[1].x, position[1].y, 1.0) * move_matrix ;
+    // vec3 pos2 =  vec3(position[2].x, position[2].y, 1.0) * move_matrix;
 
     // c_x = pos_m.x;
     // c_y = pos_m.y;
@@ -271,12 +404,12 @@ layout (constant_id = 0) const int WIGHT = 64;
 layout (constant_id = 1) const int HEIGHT = 64;
 
 layout(location = 0) out vec4 f_color;
-layout(location = 15) in vec4 fragColor;
-layout(location = 16) in vec3 contour_size;
+layout(location = 4) in vec4 fragColor;
+layout(location = 5) in vec3 contour_size;
+layout(location = 15) in mat3 points;
+layout(location = 19) in vec4[3] contour_colors_fr;
 
-// layout(location = 19) in float points[3][3];
-layout(location = 19) in mat3 points;
-layout(location = 29) in vec4[3] contour_colors_fr;
+
 
 
 void main() {
@@ -506,7 +639,7 @@ fn main() {
                 [
                     [-0.5, -0.5],
                     [-0.6, -0.1],
-                    [-0.1, 0.2]
+                    [-0.0, 0.0]
                 ],
                 Some([10.0, 20.0, 0.0]), None, Some([1.0, 0.0, 0.0, 1.0]), None, None),
             Vertex::new(
@@ -689,50 +822,50 @@ fn main() {
             previous_fence_i = image_i;
         }
         WinitEvent::WindowEvent {
-            event: WindowEvent::ReceivedCharacter(_),
+            event: WindowEvent::ReceivedCharacter(code),
             ..
         } => {
+            // NdIndex.
             // https://docs.rs/winit/latest/winit/event/enum.WindowEvent.html#variant.ReceivedCharacter
-            println!("+ {:}", figure1.move_matrix[0][2]);
+            println!("+ {:},", code);
             let mut changes = true;
+            let mn: f32 = 0.05;
             match event {
                 WinitEvent::WindowEvent {
                     event: WindowEvent::ReceivedCharacter('a'),
                     ..
                 } => {
-                    figure1.move_matrix[0][2] -= 0.1;
-                    figure1._changed = true;
-
+                    // let mut z = figure1.move_matrix.slice(s![.., 2]);
+                    // z += 1;
+                    figure1.move_matrix[[0, 3]] -=  mn;
+                    figure1._changed.move_matrix = true;
                 }
                 WinitEvent::WindowEvent {
                     event: WindowEvent::ReceivedCharacter('d'),
                     ..
                 } => {
-                    figure1.move_matrix[0][2] += 0.1;
-                    figure1._changed = true;
-
+                    figure1.move_matrix[[0, 3]] += mn;
+                    figure1._changed.move_matrix = true;
                 }
                 WinitEvent::WindowEvent {
                     event: WindowEvent::ReceivedCharacter('w'),
                     ..
                 } => {
-                    figure1.move_matrix[1][2] -= 0.1;
-                    figure1._changed = true;
-
+                    figure1.move_matrix[[1, 3]] -= mn;
+                    figure1._changed.move_matrix = true;
                 }
                 WinitEvent::WindowEvent {
                     event: WindowEvent::ReceivedCharacter('s'),
                     ..
                 } => {
-                    figure1.move_matrix[1][2] += 0.1;
-                    figure1._changed = true;
-
+                    figure1.move_matrix[[1, 3]] += mn;
+                    figure1._changed.move_matrix = true;
                 }
                 _ => {
                     changes = false;
                 }
             }
-            if changes{
+            if changes {
                 recreate_swapchain = true;
                 window_resized = true;
 
@@ -743,35 +876,31 @@ fn main() {
                     figure1.get_vertex().into_iter(),
                 )
                     .unwrap();
-
             }
         }
-        WinitEvent::WindowEvent{
+        WinitEvent::WindowEvent {
             event: WindowEvent::MouseWheel {
                 delta, ..
             },
             ..
         } => {
-
             match delta {
                 MouseScrollDelta::LineDelta(x, y) => {
-
                     println!("* x={:}, y={:}", x, y);
                     if y > 0.0 {
-                        figure1.move_matrix[0][0] *= 1.0 + y / 10.0;
-                        figure1.move_matrix[1][1] *= 1.0 + y / 10.0;
+                        figure1.scale[0] *= 1.0 + y / 10.0;
+                        figure1.scale[1] *= 1.0 + y / 10.0;
                     } else if y < 0.0 {
-                        figure1.move_matrix[0][0] /= 1.0 - y / 10.0;
-                        figure1.move_matrix[1][1] /= 1.0 - y / 10.0;
+                        figure1.scale[0] /= 1.0 - y / 10.0;
+                        figure1.scale[1] /= 1.0 - y / 10.0;
                     }
                     // figure1.move_matrix[0][0] *= 1.1;
-                    figure1._changed = true;
-
+                    figure1._changed.scale = true;
                 }
                 _ => {}
             }
 
-            if figure1._changed {
+            if figure1._changed.any() {
                 recreate_swapchain = true;
                 window_resized = true;
 
@@ -783,8 +912,35 @@ fn main() {
                 )
                     .unwrap();
             }
+        }
+        WinitEvent::WindowEvent {
+            event: WindowEvent::MouseInput { button, .. }, ..
+        } => {
+            println!("mouse button is {:?}", button);
+            match button {
+                MouseButton::Left => {
+                    figure1.rotate_angels[2] -= 0.1;
+                    figure1._changed.rotate_angels = true;
+                }
+                MouseButton::Right => {
+                    figure1.rotate_angels[2] += 0.1;
+                    figure1._changed.rotate_angels = true;
+                }
+                _ => {}
+            }
 
+            if figure1._changed.any() {
+                recreate_swapchain = true;
+                window_resized = true;
 
+                vertex_buffer = CpuAccessibleBuffer::from_iter(
+                    device.clone(),
+                    BufferUsage::vertex_buffer(),
+                    false,
+                    figure1.get_vertex().into_iter(),
+                )
+                    .unwrap();
+            }
         }
         _ => (),
     });
