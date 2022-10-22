@@ -1,0 +1,16 @@
+[package]
+name = "computer_graphics_lab_3"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+vulkano = "0.30.0"
+bytemuck = "1.8.0"
+vulkano-shaders = "0.30.0"
+shaderc-sys = "0.8.0"
+image = "0.24"
+vulkano-win = "0.30.0"
+winit = "0.26"
+ndarray  = { version = "0.15.6", default-features = false }
