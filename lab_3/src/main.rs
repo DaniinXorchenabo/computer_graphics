@@ -83,7 +83,7 @@ unsafe impl SpecializationConstants for MySpecConstants {
 #[repr(C)]
 #[derive(Default, Copy, Clone, Zeroable, Pod)]
 pub struct Vertex {
-    position: [[f32; 2]; 3],
+    position: [[f32; 4]; 4],
     // move_matrix: [[f32; 3]; 3],
     move_matrix: [[f32; 4]; 4],
     contour: [f32; 3],
@@ -93,15 +93,18 @@ pub struct Vertex {
 
 impl Vertex {
     pub fn new(
-        points: [[f32; 2]; 3],
+        points: [[f32; 3]; 3],
         contour: Option<[f32; 3]>,
         point_colors: Option<[[f32; 4]; 3]>,
         point_color: Option<[f32; 4]>,
         contour_color: Option<[f32; 4]>,
         contour_colors: Option<[[f32; 4]; 3]>,
     ) -> Self {
+        // let new_points : [[f32; 4]; 4] = [points[0], points[1], points[2], [0.0, 0.0, 0.0]]
+        //     .map(|x| [x[0], x[1], x[2], 0.0]);
         Vertex {
-            position: points,
+            position: [points[0], points[1], points[2], [0.0, 0.0, 0.0]]
+                .map(|x| [x[0], x[1], x[2], 1.0]),
             move_matrix: [
                 [1.0, 0.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0, 0.0],
@@ -116,7 +119,7 @@ impl Vertex {
             contour_colors: match (contour_colors, contour_color) {
                 (Some(x), _) => x,
                 (None, Some(y)) => [y.clone(), y.clone(), y],
-                (_, _) => [[0.0, 0.0, 0.0, 1.0], [0.0, 0.0, 0.0, 1.0], [0.0, 0.0, 0.0, 1.0]],
+                (_, _) => [[0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]],
             },
             point_colors: match (point_colors, point_color) {
                 (Some(x), _) => x,
@@ -166,7 +169,7 @@ pub struct Figure {
 impl Figure {
     pub fn new(new_polygons: Vec<Vertex>) -> Self {
         let mut real_polygons = Vec::new();
-        let default_matrix = [[1.0, 0.0, 0.0 ], [0.0, 1.0, 0.0 ], [0.0, 0.0, 1.0 ]];
+        // let default_matrix = [[1.0, 0.0, 0.0 ], [0.0, 1.0, 0.0 ], [0.0, 0.0, 1.0 ]];
         // let  default_matrix :Array2<f32> = array![
         //     [1.0, 0.0, 0.0, 1.0],
         //     [0.0, 1.0, 0.0, 1.0],
@@ -247,16 +250,16 @@ impl Figure {
             //     [0.0, 0.0, 0.0, 1.0]
             // ] ;
 
-            self.change_matrix = self.change_matrix.dot(&self.move_matrix);
+            self.change_matrix = self.change_matrix.dot(&self.move_matrix.clone());
             // self.change_matrix = self.change_matrix.clone() * self.move_matrix.clone();
 
             // self.change_matrix = self.change_matrix.clone() * self._rotate_matrix.clone();
-            self.change_matrix = self.change_matrix.dot(&self._rotate_matrix);
+            self.change_matrix = self.change_matrix.dot(&self._rotate_matrix.clone());
 
             let mut loc_change_matrix:[[f32; 4]; 4] = [
-                [1.0, 0.0, 0.0, 1.0],
-                [0.0, 1.0, 0.0, 1.0],
-                [0.0, 0.0, 1.0, 1.0],
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
                 [0.0, 0.0, 0.0, 1.0]
             ];
                 // let mut loc_change_matrix:[[f32; 3]; 3] = [
@@ -271,15 +274,15 @@ impl Figure {
             }
 
 
-            let mut res = self.polygons.clone();
+            // let mut res = self.polygons;
 
 
 
-            for vertex in &mut res {
+            for vertex in &mut self.polygons {
                 // vertex.move_matrix = change_matrix.clone()
                 vertex.move_matrix = loc_change_matrix.clone()
             }
-            res
+            self.polygons.clone()
             // self.polygons.clone()
         } else {
             self.polygons.clone()
@@ -303,23 +306,23 @@ vec3 colors[3] = vec3[](
 layout (constant_id = 0) const int WIGHT = 64;
 layout (constant_id = 1) const int HEIGHT = 64;
 
-layout(location = 0) in vec2[3] position;
+layout(location = 0) in mat4 position;
 // layout(location = 3) in mat3 move_matrix;
 layout(location = 4) out vec4 fragColor;
 layout(location = 5) out vec3 contour_size;
 layout(location = 6) in float[3] contour;
 layout(location = 9) in vec4[3] contour_colors;
 layout(location = 12) in vec4[3] point_colors;
-layout(location = 15) out mat3 points ;
-// layout(location = 19) out float points[3][3] ;
+layout(location = 15) out mat4 points ;
+
 layout(location = 19) out vec4[3] contour_colors_fr;
 layout(location = 22) in mat4 move_matrix;
 
 
 
 void main() {
-    // float c_x = position[gl_VertexIndex % 3].x;
-    // float c_y = position[gl_VertexIndex % 3].y;
+    // float c_x = position[gl_VertexIndex % 3][0];
+    // float c_y = position[gl_VertexIndex % 3][1];
 
 
     float x_mn = float(WIGHT) / float(HEIGHT);
@@ -329,12 +332,19 @@ void main() {
     // x_mn = 1.0;
     // y_mn = 1.0;
 
-    vec4 pos0 = vec4(position[0].x /x_mn , position[0].y /y_mn , 0.0, 1.0) * move_matrix ;
-    vec4 pos1 = vec4(position[1].x / x_mn, position[1].y / y_mn, 0.0, 1.0) * move_matrix ;
-    vec4 pos2 = vec4(position[2].x / x_mn, position[2].y /y_mn, 0.0, 1.0) * move_matrix;
+    vec4 pos0 = vec4(position[0][0] / x_mn, position[0][1] / y_mn, position[0][2], position[0][3]) * move_matrix ;
+    vec4 pos1 = vec4(position[1][0] / x_mn, position[1][1] / y_mn, position[1][2], position[2][3]) * move_matrix ;
+    vec4 pos2 = vec4(position[2][0] / x_mn, position[2][1] / y_mn, position[2][2], position[3][3]) * move_matrix;
 
     // vec4 pos_m =  gl_VertexIndex % 3 > 1 ? pos2: (gl_VertexIndex % 3 < 1 ? pos0: pos1);
-    vec4 pos_m = vec4(position[gl_VertexIndex % 3].x  /x_mn , position[gl_VertexIndex % 3].y / y_mn , 0.0, 1.0)  * move_matrix ;
+
+    vec4 pos_m = vec4(
+        position[gl_VertexIndex % 3][0] / x_mn ,
+        position[gl_VertexIndex % 3][1] / y_mn ,
+        position[gl_VertexIndex % 3][2],
+        position[gl_VertexIndex % 3][3]
+    )  * move_matrix ;
+
     // vec3 pos_m = vec3(c_x, c_y, 1.0)  * move_matrix ;
     //
     // vec3 pos0 = vec3(position[0].x, position[0].y, 1.0) * move_matrix ;
@@ -350,22 +360,33 @@ void main() {
     //             [((position[2].x + 1) / 2) * WIGHT, ((1 * position[2].y + 1) / 2) * HEIGHT, 1.0]
     //         ];
 
-    points[ 0 ][0] = ((pos0.x + 1) / 2) * WIGHT ;
-    points[ 0 ][1] = ((1 * pos0.y + 1) / 2) * HEIGHT;
-    points[ 0 ][2] = 1.0;
+    // points[ 0 ][0] = ((pos0.x + 1.0) / 2.0) * float(WIGHT) ;
+    // points[ 0 ][1] = ((1.0 * pos0.y + 1.0) / 2.0) * float(HEIGHT);
+    // points[ 0 ][2] = ((pos0.z + 1.0) / 2.0) * sqrt(float(WIGHT) * float(HEIGHT));
+    // points[ 0 ][3] = 1.0;
+    //
+    // points[ 1 ][0] = ((pos1.x + 1.0) / 2.0) * float(WIGHT) ;
+    // points[ 1 ][1] = ((1.0 * pos1.y + 1.0) / 2.0) * float(HEIGHT);
+    // points[ 1 ][2] = ((pos1.z + 1) / 2.0) * sqrt(float(WIGHT) * float(HEIGHT));
+    // points[ 1 ][3] = 1.0;
+    //
+    // points[ 2 ][0] = ((pos2.x + 1.0) / 2.0) * float(WIGHT) ;
+    // points[ 2 ][1] = ((1.0 * pos2.y + 1.0) / 2.0) * float(HEIGHT);
+    // points[ 2 ][2] = ((pos2.z + 1.0) / 2.0) * sqrt(float(WIGHT) * float(HEIGHT));
+    // points[ 2 ][3] = 1.0;
+    //
+    // points[ 3 ][0] = 0.0;
+    // points[ 3 ][1] = 0.0;
+    // points[ 3 ][2] = 0.0;
+    // points[ 3 ][3] = 1.0;
 
-    points[ 1 ][0] = ((pos1.x + 1) / 2) * WIGHT ;
-    points[ 1 ][1] = ((1 * pos1.y + 1) / 2) * HEIGHT;
-    points[ 1 ][2] = 1.0;
+    // points =
 
-    points[ 2 ][0] = ((pos2.x + 1) / 2) * WIGHT ;
-    points[ 2 ][1] = ((1 * pos2.y + 1) / 2) * HEIGHT;
-    points[ 2 ][2] = 1.0;
 
     // points = points * move_matrix;
 
 
-    mat3 test_mat;
+    // mat3 test_mat;
 
     // test_mat[0][0] = 1.0;
     // test_mat[0][1] = 0.0;
@@ -383,7 +404,7 @@ void main() {
     // vec3 pos = test_mat * vec3(c_x, c_y, 1.0);
 
     // gl_Position = vec4(pos.x, pos.y, pos.z, 1.0);
-    gl_Position = vec4(pos_m.x, pos_m.y, 0, 1.0);
+    gl_Position = vec4(pos_m.x, pos_m.y, pos_m.z, pos_m.w);
 
     // gl_Position = vec4(c_x, c_y, 0.0, 1.0);
     float board_size_mn =  (move_matrix[0][0] + move_matrix[1][1]) / 2;
@@ -400,7 +421,7 @@ void main() {
 
     contour_colors_fr = contour_colors;
 
-    fragColor = point_colors[ gl_VertexIndex % 3 ];
+    fragColor = move_matrix * point_colors[ gl_VertexIndex % 3 ];
 
 
     // if (pos.x == pos_m.x){
@@ -430,32 +451,58 @@ layout (constant_id = 1) const int HEIGHT = 64;
 layout(location = 0) out vec4 f_color;
 layout(location = 4) in vec4 fragColor;
 layout(location = 5) in vec3 contour_size;
-layout(location = 15) in mat3 points;
+layout(location = 15) in mat4 points;
 layout(location = 19) in vec4[3] contour_colors_fr;
 
 
 
 
 void main() {
-    float A1 = points[0][1] - points[1][1];
-    float B1 = points[1][0] - points[0][0];
-    float C1 = points[0][0] * points[1][1] - points[1][0] * points[0][1];
 
-    float A2 = points[1][1] - points[2][1];
-    float B2 = points[2][0] - points[1][0];
-    float C2 = points[1][0] * points[2][1] - points[2][0] * points[1][1];
+    // float A1 = points[0][1] - points[1][1];
+    // float B1 = points[1][0] - points[0][0];
+    // float C1 = points[0][0] * points[1][1] - points[1][0] * points[0][1];
+    //
+    // float A2 = points[1][1] - points[2][1];
+    // float B2 = points[2][0] - points[1][0];
+    // float C2 = points[1][0] * points[2][1] - points[2][0] * points[1][1];
+    //
+    // float A3 = points[2][1] - points[0][1];
+    // float B3 = points[0][0] - points[2][0];
+    // float C3 = points[2][0] * points[0][1] - points[0][0] * points[2][1];
 
-    float A3 = points[2][1] - points[0][1];
-    float B3 = points[0][0] - points[2][0];
-    float C3 = points[2][0] * points[0][1] - points[0][0] * points[2][1];
+    vec4 v_1_0 = points[1] - points[0];
+    vec4 v_2_0 = points[2] - points[0];
 
-    if (abs( A1 * gl_FragCoord.x   + B1 * gl_FragCoord.y + C1) / sqrt(A1*A1 + B1*B1) < contour_size.x )
+    vec4 v_2_1 = points[2] - points[1];
+    vec4 v_0_1 = points[0] - points[1];
+
+    vec4 v_0_2 = points[0] - points[2];
+    vec4 v_1_2 = points[1] - points[2];
+
+    float A1 = v_1_0.y * v_2_0.z - v_1_0.z * v_2_0.y ;
+    float B1 = v_1_0.z * v_2_0.x - v_1_0.x * v_2_0.z;
+    float C1 = v_1_0.x * v_2_0.y - v_1_0.y * v_2_0.x;
+    float D1 = (- A1 * points[0][0] - B1 * points[0][1] - C1 * points[0][2]);
+
+    float A2 = v_2_1.y * v_0_1.z - v_2_1.z * v_0_1.y;
+    float B2 = v_2_1.z * v_0_1.x - v_2_1.x * v_0_1.z;
+    float C2 = v_2_1.x * v_0_1.y - v_2_1.y * v_0_1.x;
+    float D2 = (- A2 * points[1][0] - B2 * points[1][1] - C2 * points[1][2]);
+
+    float A3 = v_0_2.y * v_1_2.z - v_0_2.z * v_1_2.y;
+    float B3 = v_0_2.z * v_1_2.x - v_0_2.x * v_1_2.z;
+    float C3 = v_0_2.x * v_1_2.y - v_0_2.y * v_1_2.x;
+    float D3 = (- A2 * points[2][0] - B2 * points[2][1] - C2 * points[2][2]);
+
+
+    if (abs( A1 * gl_FragCoord.x   + B1 * gl_FragCoord.y + C1 * gl_FragCoord.z + D1) / sqrt(A1*A1 + B1*B1 + C1*C1) < contour_size.x )
         f_color = contour_colors_fr[0];
 
-    else if (abs( A2 * gl_FragCoord.x   + B2 * gl_FragCoord.y + C2) / sqrt(A2*A2 + B2*B2) < contour_size.y)
+    else if (abs( A2 * gl_FragCoord.x   + B2 * gl_FragCoord.y + C2 * gl_FragCoord.z + D2) / sqrt(A2*A2 + B2*B2 + C2*C2) < contour_size.y)
         f_color = contour_colors_fr[1];
 
-    else if (abs( A3 * gl_FragCoord.x   + B3 * gl_FragCoord.y + C3) / sqrt(A3*A3 + B3*B3) < contour_size.z)
+    else if (abs( A3 * gl_FragCoord.x   + B3 * gl_FragCoord.y + C3 * gl_FragCoord.z + D3) / sqrt(A3*A3 + B3*B3 + C3*C3) < contour_size.z)
         f_color = contour_colors_fr[2];
 
     else
@@ -661,37 +708,44 @@ fn main() {
         vec![
             Vertex::new(
                 [
-                    [-0.5, -0.5],
-                    [-0.6, -0.1],
-                    [-0.1, 0.2]
+                    [-0.5, -0.5, 0.0],
+                    [-0.6, -0.1, 0.0],
+                    [-0.1, 0.2, 0.0]
                 ],
                 Some([10.0, 20.0, 0.0]), None, Some([1.0, 0.0, 0.0, 1.0]), None, None),
             Vertex::new(
                 [
-                    [0.5, 0.5],
-                    [0.5, 0.1],
-                    [0.1, 0.1],
+                    [0.5, 0.5, 0.0],
+                    [0.5, 0.1, 0.0],
+                    [0.1, 0.1, 0.0],
                 ],
                 Some([10.0, 10.0, 10.0]), None, None, None, Some([[1.0, 1.0, 0.0, 1.0], [0.0, 1.0, 1.0, 1.0], [1.0, 0.0, 1.0, 1.0]])),
             Vertex::new(
                 [
-                    [-0.5, -0.5],
-                    [-0.5, -0.9],
-                    [-0.9, -0.9],
+                    [-0.5, -0.5, 0.0],
+                    [-0.5, -0.9, 0.0],
+                    [-0.9, -0.9, 0.0],
                 ],
-                None, Some([[1.0, 0.0, 0.0, 1.0], [0.0, 1.0, 0.0, 1.0], [0.0, 0.0, 1.0, 1.0]]), None, None, None),
+                None, Some([[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]), None, None, None),
             Vertex::new(
                 [
-                    [0.9, -0.5],
-                    [0.5, -0.9],
-                    [0.9, -0.9],
+                    [-0.5, -0.5, 2.0],
+                    [-0.5, -0.9, -1.0],
+                    [-0.9, -0.9, 0.0],
+                ],
+                None, Some([[1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0], [1.0, 0.0, 1.0, 0.0]]), None, None, None),
+            Vertex::new(
+                [
+                    [0.9, -0.5, 0.0],
+                    [0.5, -0.9, 0.0],
+                    [0.9, -0.9, 0.0],
                 ],
                 None, Some([[1.0, 0.0, 1.0, 1.0], [0.0, 1.0, 0.0, 1.0], [0.0, 1.0, 1.0, 1.0]]), None, None, None),
             Vertex::new(
                 [
-                    [-0.5, 0.9],
-                    [-0.5, 0.5],
-                    [-0.9, 0.5]
+                    [-0.5, 0.9, 0.0],
+                    [-0.5, 0.5, 0.0],
+                    [-0.9, 0.5, 0.0]
                 ],
                 None, None, None, None, None),
             ]);
@@ -753,6 +807,7 @@ fn main() {
             ..
         } => {
             window_resized = true;
+            recreate_swapchain = true;
         }
         WinitEvent::MainEventsCleared => {
             if window_resized || recreate_swapchain {
