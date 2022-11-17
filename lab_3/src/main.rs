@@ -398,7 +398,7 @@ void main() {
 
     contour_colors_fr = contour_colors;
 
-    fragColor = point_colors[ gl_VertexIndex % 3 ] * move_matrix ;
+    fragColor = point_colors[ gl_VertexIndex % 3 ] ;
 
 
     // if (pos.x == pos_m.x){
