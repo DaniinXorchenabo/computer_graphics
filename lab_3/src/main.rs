@@ -40,8 +40,8 @@ use vulkano::swapchain::{
 };
 use vulkano::sync::{self, FenceSignalFuture, FlushError, GpuFuture};
 use vulkano_win::VkSurfaceBuild;
-use winit::dpi::PhysicalSize;
-use winit::event::{Event as WinitEvent, Event, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::dpi::{PhysicalPosition, PhysicalSize};
+use winit::event::{ElementState, Event as WinitEvent, Event, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ControlFlow as WinitControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
 
@@ -202,12 +202,12 @@ impl Figure {
             if self._changed.rotate_angels {
                 let (x, y, z) = (self.rotate_angels[0], self.rotate_angels[1], self.rotate_angels[2]);
                 let (a, b, c, d, e, f) = (f32::cos(x), f32::sin(x), f32::cos(y), f32::sin(y), f32::cos(z), f32::sin(z));
-                // self._rotate_matrix = array![
-                //     [c * e, -c * f, -d, 0.0],
-                //     [-b * d * e + a * f, b * d * f + a * e, -b * c, 0.0],
-                //     [a * d * e + b * f, -a * d * f + b * e, a * c, 0.0],
-                //     [0.0, 0.0, 0.0, 1.0]
-                // ];
+                self._rotate_matrix = array![
+                    [c * e, -c * f, -d, 0.0],
+                    [-b * d * e + a * f, b * d * f + a * e, -b * c, 0.0],
+                    [a * d * e + b * f, -a * d * f + b * e, a * c, 0.0],
+                    [0.0, 0.0, 0.0, 1.0]
+                ];
                 // self._rotate_matrix = array![
                 //     [1.0, 0.0, 0.0, 0.0],
                 //     [0.0, a, -b, 0.0],
@@ -220,12 +220,12 @@ impl Figure {
                 //     [0.0, f, e, 0.0],
                 //     [0.0, 0.0, 0.0, 1.0]
                 // ];
-                self._rotate_matrix = array![
-                    [e, -f, 0.0, 0.0],
-                    [f, e, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0]
-                ];
+                // self._rotate_matrix = array![
+                //     [e, -f, 0.0, 0.0],
+                //     [f, e, 0.0, 0.0],
+                //     [0.0, 0.0, 1.0, 0.0],
+                //     [0.0, 0.0, 0.0, 1.0]
+                // ];
                 // self._rotate_matrix = array![
                 //     [e, 0.0, -f, 0.0],
                 //     [0.0, 1.0, 0.0, 0.0],
@@ -250,11 +250,13 @@ impl Figure {
             //     [0.0, 0.0, 0.0, 1.0]
             // ] ;
 
-            self.change_matrix = self.change_matrix.dot(&self.move_matrix.clone());
+
             // self.change_matrix = self.change_matrix.clone() * self.move_matrix.clone();
 
             // self.change_matrix = self.change_matrix.clone() * self._rotate_matrix.clone();
             self.change_matrix = self.change_matrix.dot(&self._rotate_matrix.clone());
+            self.change_matrix = self.change_matrix.dot(&self.move_matrix.clone());
+
 
             let mut loc_change_matrix:[[f32; 4]; 4] = [
                 [1.0, 0.0, 0.0, 0.0],
@@ -262,6 +264,7 @@ impl Figure {
                 [0.0, 0.0, 1.0, 0.0],
                 [0.0, 0.0, 0.0, 1.0]
             ];
+
                 // let mut loc_change_matrix:[[f32; 3]; 3] = [
                 //     [1.0, 0.0, 0.0],
                 //     [0.0, 1.0, 0.0],
@@ -327,24 +330,79 @@ void main() {
 
     float x_mn = float(WIGHT) / float(HEIGHT);
     float y_mn = float(HEIGHT) / float(WIGHT);
+
     x_mn = max(1.0, x_mn);
     y_mn = max(1.0, y_mn);
+    float z_mn = sqrt(x_mn * y_mn);
+    z_mn = max(x_mn, y_mn);
     // x_mn = 1.0;
     // y_mn = 1.0;
 
-    vec4 pos0 = vec4(position[0][0] / x_mn, position[0][1] / y_mn, position[0][2], position[0][3]) * move_matrix ;
-    vec4 pos1 = vec4(position[1][0] / x_mn, position[1][1] / y_mn, position[1][2], position[2][3]) * move_matrix ;
-    vec4 pos2 = vec4(position[2][0] / x_mn, position[2][1] / y_mn, position[2][2], position[3][3]) * move_matrix;
+    // vec4 pos0 = vec4(position[0][0] / x_mn, position[0][1] / y_mn, position[0][2], position[0][3]) * move_matrix ;
+    // vec4 pos1 = vec4(position[1][0] / x_mn, position[1][1] / y_mn, position[1][2], position[2][3]) * move_matrix ;
+    // vec4 pos2 = vec4(position[2][0] / x_mn, position[2][1] / y_mn, position[2][2], position[3][3]) * move_matrix;
+    // mat4 poses =  position * mat4(
+    //     1./x_mn, 0.,        0.,      0.,
+    //     0.,      1./ y_mn,  0.,      0.,
+    //     0.,      0.,        1./z_mn, 0.,
+    //     0.,      0.,        0.,      1.
+    // );
 
     // vec4 pos_m =  gl_VertexIndex % 3 > 1 ? pos2: (gl_VertexIndex % 3 < 1 ? pos0: pos1);
 
-    vec4 pos_m = vec4(
-        position[gl_VertexIndex % 3][0] / x_mn ,
-        position[gl_VertexIndex % 3][1] / y_mn ,
-        position[gl_VertexIndex % 3][2],
-        position[gl_VertexIndex % 3][3]
-    )  * move_matrix ;
 
+    mat4 poses = matrixCompMult(position * move_matrix,  mat4(
+        1.0 / x_mn, 1.0 / y_mn, 1.,     1.,
+        1.0 / x_mn, 1.0 / y_mn, 1.,     1.,
+        1.0 / x_mn, 1.0 / y_mn, 1.,     1.,
+        1.0,        1.0,        1.,     1.
+    ))  ;
+    // mat4 pos_m =  poses;
+    // pos_m = position * move_matrix;
+    // // pos_m = position;
+    // mat4 disp_pos_m = pos_m;
+    // mat4 disp_pos_m = pos_m * mat4(
+    //     1., 0., 0., 0.,
+    //     0., 1., 0., 0.,
+    //     0., 0., 1., 0.,
+    //     0., 0., 0., 1.
+    // );
+    // vec4 pos_m = vec4(
+    //     position[gl_VertexIndex % 3][0] * (1. / x_mn) ,
+    //     position[gl_VertexIndex % 3][1] * (1. / y_mn) ,
+    //     position[gl_VertexIndex % 3][2],
+    //     position[gl_VertexIndex % 3][3]
+    // )  * move_matrix ;
+    mat4 _pos_m = ((move_matrix * mat4(
+        1. / x_mn,  0.,         0.,         0.,
+        0.,         1. / y_mn,  0.,         0.,
+        0.,         0.,         1./z_mn,    0.,
+        0.,         0.,         0.,         1.
+    )) * position);
+    // _pos_m[0] = _pos_m[0] / _pos_m[0].w;
+    // _pos_m[1] = _pos_m[1] / _pos_m[1].w;
+    // _pos_m[2] = _pos_m[2] / _pos_m[2].w;
+    // _pos_m[3] = _pos_m[3] / _pos_m[3].w;
+
+    vec4 pos_m = _pos_m[gl_VertexIndex % 3];
+    // vec4 pos_m = vec4(
+    //     _pos_m[0][gl_VertexIndex % 3],
+    //     _pos_m[1][gl_VertexIndex % 3],
+    //     _pos_m[2][gl_VertexIndex % 3],
+    //     _pos_m[3][gl_VertexIndex % 3]
+    // );
+    // vec4 pos_m = vec4(
+    //     _pos_m[gl_VertexIndex % 3][0],
+    //     _pos_m[gl_VertexIndex % 3][1],
+    //     _pos_m[gl_VertexIndex % 3][2],
+    //     _pos_m[gl_VertexIndex % 3][3]
+    // );
+    vec4 disp_pos_m =  ( mat4(
+        0.707,  -0.408, 0., 0.,
+        0.,     0.816,  0., 0.,
+        -0.707, -0.408, 0., 0.,
+        0.,     0.,     0., 1.
+    ) * _pos_m)[gl_VertexIndex % 3];
     // vec3 pos_m = vec3(c_x, c_y, 1.0)  * move_matrix ;
     //
     // vec3 pos0 = vec3(position[0].x, position[0].y, 1.0) * move_matrix ;
@@ -404,13 +462,17 @@ void main() {
     // vec3 pos = test_mat * vec3(c_x, c_y, 1.0);
 
     // gl_Position = vec4(pos.x, pos.y, pos.z, 1.0);
-    gl_Position = vec4(pos_m.x, pos_m.y, pos_m.z, pos_m.w);
+    // gl_Position = vec4(disp_pos_m[((gl_VertexIndex - 0) % 3) ].xyz,  1.0  );
+    // gl_Position = vec4(disp_pos_m.xy, pos_m.z, 1.0  );
+    gl_Position = vec4(disp_pos_m.xyzw );
 
     // gl_Position = vec4(c_x, c_y, 0.0, 1.0);
     float board_size_mn =  (move_matrix[0][0] + move_matrix[1][1]) / 2;
-    contour_size = vec3(contour[0] == 0.0 ? 0.0: (contour[0] == 1.0 ? 1.0 :max( contour[0] * length(pos0.xyz - pos1.xyz) / length(position[0].xy - position[1].xy), 1.4)),
-                        contour[1] == 0.0 ? 0.0: (contour[1] == 1.0 ? 1.0 :max( contour[1] * length(pos1.xyz - pos2.xyz) / length(position[1].xy - position[2].xy), 1.4)),
-                        contour[2] == 0.0 ? 0.0: (contour[2] == 1.0 ? 1.0 :max( contour[2] * length(pos2.xyz - pos0.xyz) / length(position[2].xy - position[0].xy), 1.4)));
+    contour_size = vec3(
+        contour[0] == 0.0 ? 0.0: (contour[0] == 1.0 ? 1.0 :max( contour[0] * length(poses[0].xyz - poses[1].xyz) / length(position[0].xy - position[1].xy), 1.4)),
+        contour[1] == 0.0 ? 0.0: (contour[1] == 1.0 ? 1.0 :max( contour[1] * length(poses[1].xyz - poses[2].xyz) / length(position[1].xy - position[2].xy), 1.4)),
+        contour[2] == 0.0 ? 0.0: (contour[2] == 1.0 ? 1.0 :max( contour[2] * length(poses[2].xyz - poses[0].xyz) / length(position[2].xy - position[0].xy), 1.4))
+    );
     // // contour_size = vec3(contour[0], contour[1], contour[2]);
 
     // contour_size = vec3(contour[0] * length(pos0.xyz - pos1.xyz) / length(position[0].xy - position[1].xy),
@@ -421,7 +483,7 @@ void main() {
 
     contour_colors_fr = contour_colors;
 
-    fragColor = move_matrix * point_colors[ gl_VertexIndex % 3 ];
+    fragColor = point_colors[ gl_VertexIndex % 3 ] * move_matrix ;
 
 
     // if (pos.x == pos_m.x){
@@ -706,48 +768,113 @@ fn main() {
 
     let mut figure1 = Figure::new(
         vec![
+            // Vertex::new(
+            //     [
+            //         [-0.5, -0.5, 0.0],
+            //         [-0.6, -0.1, 0.0],
+            //         [-0.1, 0.2, 0.0]
+            //     ],
+            //     Some([10.0, 20.0, 0.0]), None, Some([1.0, 0.0, 0.0, 1.0]), None, None),
+            // Vertex::new(
+            //     [
+            //         [0.5, 0.5, 0.0],
+            //         [0.5, 0.1, 0.0],
+            //         [0.1, 0.1, 0.0],
+            //     ],
+            //     Some([10.0, 10.0, 10.0]), None, None, None, Some([[1.0, 1.0, 0.0, 1.0], [0.0, 1.0, 1.0, 1.0], [1.0, 0.0, 1.0, 1.0]])),
+            // Vertex::new(
+            //     [
+            //         [-0.5, -0.5, 0.0],
+            //         [-0.5, -0.9, 0.0],
+            //         [-0.9, -0.9, 0.0],
+            //     ],
+            //     None, Some([[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]), None, None, None),
+            // Vertex::new(
+            //     [
+            //
+            //         [-0.5, -0.9, 0.1],
+            //         [-0.9, -0.9, 0.1],
+            //         [-0.5, -0.5, 0.2],
+            //     ],
+            //     None, Some([[1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0], [1.0, 0.0, 1.0, 0.0]]), None, None, None),
+            // Vertex::new(
+            //     [
+            //
+            //         [-0.5, -0.5, 0.5],
+            //         [-0.5, 0.5, -0.5],
+            //         [0.5, -0.5, -0.5],
+            //     ],
+            //     None, Some([[1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0], [1.0, 0.0, 1.0, 0.0]]), None, None, None),
+
             Vertex::new(
                 [
-                    [-0.5, -0.5, 0.0],
-                    [-0.6, -0.1, 0.0],
-                    [-0.1, 0.2, 0.0]
-                ],
-                Some([10.0, 20.0, 0.0]), None, Some([1.0, 0.0, 0.0, 1.0]), None, None),
-            Vertex::new(
-                [
-                    [0.5, 0.5, 0.0],
-                    [0.5, 0.1, 0.0],
-                    [0.1, 0.1, 0.0],
-                ],
-                Some([10.0, 10.0, 10.0]), None, None, None, Some([[1.0, 1.0, 0.0, 1.0], [0.0, 1.0, 1.0, 1.0], [1.0, 0.0, 1.0, 1.0]])),
-            Vertex::new(
-                [
-                    [-0.5, -0.5, 0.0],
-                    [-0.5, -0.9, 0.0],
-                    [-0.9, -0.9, 0.0],
-                ],
-                None, Some([[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]), None, None, None),
-            Vertex::new(
-                [
-                    [-0.5, -0.5, 2.0],
-                    [-0.5, -0.9, -1.0],
-                    [-0.9, -0.9, 0.0],
+
+                    [-0.5, -0.5, -0.5],
+                    [-0.5, -0.5, 0.5],
+                    [-0.5, 0.5, 0.5],
                 ],
                 None, Some([[1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0], [1.0, 0.0, 1.0, 0.0]]), None, None, None),
             Vertex::new(
                 [
-                    [0.9, -0.5, 0.0],
-                    [0.5, -0.9, 0.0],
-                    [0.9, -0.9, 0.0],
+
+                    [-0.5, 0.5, -0.5],
+                    [-0.5, -0.5, -0.5],
+                    [-0.5, 0.5, 0.5],
                 ],
-                None, Some([[1.0, 0.0, 1.0, 1.0], [0.0, 1.0, 0.0, 1.0], [0.0, 1.0, 1.0, 1.0]]), None, None, None),
+                None, Some([[1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0], [1.0, 0.0, 1.0, 0.0]]), None, None, None),
+
+
             Vertex::new(
                 [
-                    [-0.5, 0.9, 0.0],
-                    [-0.5, 0.5, 0.0],
-                    [-0.9, 0.5, 0.0]
+
+                    [0.5, -0.5, -0.5],
+                    [0.5, -0.5, 0.5],
+                    [0.5, 0.5, 0.5],
                 ],
-                None, None, None, None, None),
+                None, Some([[1.0, 0.5, 0.5, 0.0], [0.5, 1.0, 0.5, 0.0], [1.0, 0.5, 0.5, 0.0]]), None, None, None),
+            Vertex::new(
+                [
+
+                    [0.5, 0.5, -0.5],
+                    [0.5, -0.5, -0.5],
+                    [0.5, 0.5, 0.5],
+                ],
+                None, Some([[1.0, 0.5, 0.5, 0.0], [0.5, 1.0, 0.5, 0.0], [1.0, 0.5, 0.5, 0.0]]), None, None, None),
+
+
+
+            Vertex::new(
+                [
+
+                    [0.5, -0.5, 0.5],
+                    [-0.5, -0.5, 0.5],
+                    [-0.5, 0.5, 0.5],
+                ],
+                None, Some([[1.0, 0.5, 0.5, 0.0], [0.5, 1.0, 0.5, 0.0], [1.0, 0.5, 0.5, 0.0]]), None, None, None),
+            Vertex::new(
+                [
+
+                    [-0.5, 0.5, 0.5],
+                    [0.5, -0.5, 0.5],
+                    [0.5, 0.5, 0.5],
+                ],
+                None, Some([[1.0, 0.5, 0.5, 0.0], [0.5, 1.0, 0.5, 0.0], [1.0, 0.5, 0.5, 0.0]]), None, None, None),
+
+
+            // Vertex::new(
+            //     [
+            //         [0.9, -0.5, 0.0],
+            //         [0.5, -0.9, 0.0],
+            //         [0.9, -0.9, 0.0],
+            //     ],
+            //     None, Some([[1.0, 0.0, 1.0, 1.0], [0.0, 1.0, 0.0, 1.0], [0.0, 1.0, 1.0, 1.0]]), None, None, None),
+            // Vertex::new(
+            //     [
+            //         [-0.5, 0.9, 0.0],
+            //         [-0.5, 0.5, 0.0],
+            //         [-0.9, 0.5, 0.0]
+            //     ],
+            //     None, None, None, None, None),
             ]);
 
     let mut vertex_buffer = CpuAccessibleBuffer::from_iter(
@@ -794,6 +921,13 @@ fn main() {
     let frames_in_flight = images.len();
     let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; frames_in_flight];
     let mut previous_fence_i = 0;
+
+    let mut mouse_button_pressed = false;
+    let mut mouse_wheel_pressed = false;
+    let mut last_mouse_pos: (f64, f64) = (-1.0f64, -1.0f64);
+    let mut window_width = surface.window().inner_size().width as f64;
+    let mut window_height = surface.window().inner_size().height as f64;
+
 
     event_loop.run(move |event, _, control_flow| match event {
         WinitEvent::WindowEvent {
@@ -853,6 +987,8 @@ fn main() {
                         &new_framebuffers,
                         vertex_buffer.clone(),
                     );
+                    window_width = surface.window().inner_size().width as f64;
+                    window_height = surface.window().inner_size().height as f64;
                 }
             }
 
@@ -917,6 +1053,7 @@ fn main() {
             println!("+ {:},", code);
             let mut changes = true;
             let mn: f32 = 0.05;
+            println!("{:}", figure1.move_matrix);
             match event {
                 WinitEvent::WindowEvent {
                     event: WindowEvent::ReceivedCharacter('a'),
@@ -924,33 +1061,48 @@ fn main() {
                 } => {
                     // let mut z = figure1.move_matrix.slice(s![.., 2]);
                     // z += 1;
-                    figure1.move_matrix[[0, 3]] -=  mn;
+                    figure1.move_matrix[[3, 0]] -=  mn;
                     figure1._changed.move_matrix = true;
                 }
                 WinitEvent::WindowEvent {
                     event: WindowEvent::ReceivedCharacter('d'),
                     ..
                 } => {
-                    figure1.move_matrix[[0, 3]] += mn;
+                    figure1.move_matrix[[3, 0]] += mn;
                     figure1._changed.move_matrix = true;
                 }
                 WinitEvent::WindowEvent {
                     event: WindowEvent::ReceivedCharacter('w'),
                     ..
                 } => {
-                    figure1.move_matrix[[1, 3]] -= mn;
+                    figure1.move_matrix[[3, 1]] -= mn;
                     figure1._changed.move_matrix = true;
                 }
                 WinitEvent::WindowEvent {
                     event: WindowEvent::ReceivedCharacter('s'),
                     ..
                 } => {
-                    figure1.move_matrix[[1, 3]] += mn;
+                    figure1.move_matrix[[3, 1]] += mn;
+                    figure1._changed.move_matrix = true;
+                }
+                WinitEvent::WindowEvent {
+                    event: WindowEvent::ReceivedCharacter('z'),
+                    ..
+                } => {
+                    figure1.move_matrix[[3, 2]] -= mn;
+                    figure1._changed.move_matrix = true;
+                }
+                WinitEvent::WindowEvent {
+                    event: WindowEvent::ReceivedCharacter('x'),
+                    ..
+                } => {
+                    figure1.move_matrix[[3, 2]] += mn;
                     figure1._changed.move_matrix = true;
                 }
                 _ => {
                     changes = false;
                 }
+
             }
             if changes {
                 recreate_swapchain = true;
@@ -971,18 +1123,66 @@ fn main() {
             },
             ..
         } => {
-            match delta {
-                MouseScrollDelta::LineDelta(x, y) => {
-                    println!("* x={:}, y={:}", x, y);
-                    if y > 0.0 {
-                        figure1.scale[0] *= 1.0 + y / 10.0;
-                        figure1.scale[1] *= 1.0 + y / 10.0;
-                    } else if y < 0.0 {
-                        figure1.scale[0] /= 1.0 - y / 10.0;
-                        figure1.scale[1] /= 1.0 - y / 10.0;
+            let mn = 0.1;
+            if mouse_wheel_pressed {
+                match delta {
+
+                    MouseScrollDelta::LineDelta(x, y) => {
+                        figure1.rotate_angels[0] += (x + y) * mn;
+                        figure1._changed.rotate_angels =true;
                     }
-                    // figure1.move_matrix[0][0] *= 1.1;
-                    figure1._changed.scale = true;
+                    _ => {}
+                }
+            } else {
+                match delta {
+                    MouseScrollDelta::LineDelta(x, y) => {
+                        println!("* x={:}, y={:}", x, y);
+                        if y > 0.0 {
+                            figure1.scale[0] *= 1.0 + y / 10.0;
+                            figure1.scale[1] *= 1.0 + y / 10.0;
+                            figure1.scale[2] *= 1.0 + y / 10.0;
+                        } else if y < 0.0 {
+                            figure1.scale[0] /= 1.0 - y / 10.0;
+                            figure1.scale[1] /= 1.0 - y / 10.0;
+                            figure1.scale[2] /= 1.0 - y / 10.0;
+                        }
+                        // figure1.move_matrix[0][0] *= 1.1;
+                        figure1._changed.scale = true;
+                    }
+                    _ => {}
+                }
+            }
+
+            if figure1._changed.any() {
+                recreate_swapchain = true;
+                window_resized = true;
+
+                // vertex_buffer = CpuAccessibleBuffer::from_iter(
+                //     device.clone(),
+                //     BufferUsage::vertex_buffer(),
+                //     false,
+                //     figure1.get_vertex(surface.window().inner_size()).into_iter(),
+                // )
+                //     .unwrap();
+            }
+        }
+        WinitEvent::WindowEvent {
+            event: WindowEvent::MouseInput { button, state: ElementState::Pressed, .. }, ..
+        } => {
+            println!("mouse button is {:?} Pressed", button);
+            match button {
+                MouseButton::Left => {
+
+                    // figure1.rotate_angels[2] -= 0.1;
+                    // figure1._changed.rotate_angels = true;
+                }
+                MouseButton::Right => {
+                    mouse_button_pressed = true;
+                    // figure1.rotate_angels[2] += 0.1;
+                    // figure1._changed.rotate_angels = true;
+                }
+                MouseButton::Middle => {
+                    mouse_wheel_pressed = true;
                 }
                 _ => {}
             }
@@ -1001,34 +1201,62 @@ fn main() {
             }
         }
         WinitEvent::WindowEvent {
-            event: WindowEvent::MouseInput { button, .. }, ..
+            event: WindowEvent::MouseInput { button, state: ElementState::Released, .. }, ..
         } => {
-            println!("mouse button is {:?}", button);
+            println!("mouse button is {:?} Released", button);
             match button {
                 MouseButton::Left => {
-                    figure1.rotate_angels[2] -= 0.1;
-                    figure1._changed.rotate_angels = true;
+
+                    // figure1.rotate_angels[2] -= 0.1;
+                    // figure1._changed.rotate_angels = true;
                 }
                 MouseButton::Right => {
-                    figure1.rotate_angels[2] += 0.1;
-                    figure1._changed.rotate_angels = true;
+                    mouse_button_pressed = false;
+                    last_mouse_pos = (-1.0f64, -1.0f64);
+                    // figure1.rotate_angels[2] += 0.1;
+                    // figure1._changed.rotate_angels = true;
+                }
+                MouseButton::Middle => {
+                    mouse_wheel_pressed = false;
                 }
                 _ => {}
             }
+        }
+        WinitEvent::WindowEvent {
+            event: WindowEvent::CursorMoved { position,  .. }, ..
+        } => {
+            if mouse_button_pressed{
+                if 0f64 <= position.x && position.x <= window_width
+                    && 0f64 <= position.y && position.y <= window_height{
 
-            if figure1._changed.any() {
-                recreate_swapchain = true;
-                window_resized = true;
+                    let sensitivity = 0.01;
 
-                // vertex_buffer = CpuAccessibleBuffer::from_iter(
-                //     device.clone(),
-                //     BufferUsage::vertex_buffer(),
-                //     false,
-                //     figure1.get_vertex(surface.window().inner_size()).into_iter(),
-                // )
-                //     .unwrap();
+                    if last_mouse_pos != (-1.0f64, -1.0f64) {
+                        println!("pos vec({:}, {:}) || <{:?}>", position.x - last_mouse_pos.0, position.y - last_mouse_pos.1, position);
+                        figure1.rotate_angels[1] += ((position.x - last_mouse_pos.0) * sensitivity) as f32;
+                        figure1.rotate_angels[2] += ((position.y - last_mouse_pos.1) * sensitivity)  as f32;
+                        figure1._changed.rotate_angels = true;
+                        if figure1._changed.any() {
+                            recreate_swapchain = true;
+                            window_resized = true;
+                        }
+                    }
+                    last_mouse_pos.0 = position.x;
+                    last_mouse_pos.1 = position.y;
+                } else {
+                    if last_mouse_pos != (-1.0f64, -1.0f64) {
+                        last_mouse_pos = (-1.0f64, -1.0f64);
+                    }
+
+                }
+
             }
         }
+        // WinitEvent::WindowEvent {
+        //     event: WindowEvent::CursorMoved { modifiers: winit::ModifiersState{}, ..}, ..
+        // } => {
+        //
+        // }
         _ => (),
     });
 }
