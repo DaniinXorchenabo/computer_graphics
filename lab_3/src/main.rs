@@ -334,11 +334,11 @@ layout(location = 26) in int projection_flag;
 
 void main() {
 
-    float x_mn = float(WIGHT) / float(HEIGHT);
-    float y_mn = float(HEIGHT) / float(WIGHT);
+    float x_mn_raw = float(WIGHT) / float(HEIGHT);
+    float y_mn_raw = float(HEIGHT) / float(WIGHT);
 
-    x_mn = max(1.0, x_mn);
-    y_mn = max(1.0, y_mn);
+    float x_mn = max(1.0, x_mn_raw);
+    float y_mn = max(1.0, y_mn_raw);
     float z_mn = sqrt(x_mn * y_mn);
     z_mn = max(x_mn, y_mn);
 
@@ -350,12 +350,51 @@ void main() {
         1.0,        1.0,        1.,     1.
     ))  ;
 
-    mat4 _pos_m = ((move_matrix * mat4(
+    float fovy = radians(90.) ; // Угол обзора нужен чтобы указать как много объектов попадает на канвас от точки с которой мы смотрим. Не понятно? Тогда проще — чем больше угол мы передадим, тем меньше объекты становятся при удалении. Диапазон углов лучше использовать от 1 до 179.
+    float aspect = float(HEIGHT) / float(WIGHT);
+    float near = -0.1; //этими параметрами мы подгоняем координаты Z у моделей так, чтобы можно было определить какие модели слишком близко к нам, а какие слишком далеко (Z будет в диапазоне от -1 до 1 после преобразований перспективы), настолько что нам их не нужно рисовать на экране.
+    float far = -1000.;
+    mat4 perspective_projection = mat4(
+        1.0 / tan(fovy / 2.) / aspect, 0.,                      -1.,                            0.,
+        0.,                             1.0 / tan(fovy / 2.),   0.,                             0.,
+        0.,                             0.,                     (far + near) / (far - near),    (-2. * far * near) / (far - near),
+        0.,                             0.,                     -1.,                            0.
+    );
+
+
+    mat4 resize_mat =  mat4(
         1. / x_mn,  0.,         0.,         0.,
         0.,         1. / y_mn,  0.,         0.,
-        0.,         0.,         1./z_mn,    0.,
+        0.,         0.,         1.,    0.,
         0.,         0.,         0.,         1.
-    )) * position);
+    );
+    // mat4 resize_mat =  mat4(
+    //     1.,  0.,         0.,         0.,
+    //     0.,         1.,  0.,         0.,
+    //     0.,         0.,         1.,    0.,
+    //     0.,         0.,         0.,         1.
+    // );
+
+    mat4 _pos_m = resize_mat * ( perspective_projection * ((move_matrix * ( position )))) ;
+
+    // _pos_m = matrixCompMult(_pos_m , mat4(
+    //     1./_pos_m[0].w * x_mn / 2., 1./_pos_m[0].w * y_mn / 2., 1., 1./_pos_m[0].w,
+    //     1./_pos_m[1].w * x_mn / 2., 1./_pos_m[1].w * y_mn / 2., 1., 1./_pos_m[1].w,
+    //     1./_pos_m[2].w * x_mn / 2., 1./_pos_m[2].w * y_mn / 2., 1., 1./_pos_m[2].w,
+    //     1.,             1.,             1., 1.
+    // ));
+    // _pos_m = matrixCompMult(_pos_m , mat4(
+    //     1./_pos_m[0].w, 1./_pos_m[0].w, 1., 1./_pos_m[0].w,
+    //     1./_pos_m[1].w, 1./_pos_m[1].w, 1., 1./_pos_m[1].w,
+    //     1./_pos_m[2].w, 1./_pos_m[2].w, 1., 1./_pos_m[2].w,
+    //     1.,             1.,             1., 1.
+    // ));
+    _pos_m = matrixCompMult(_pos_m , mat4(
+        1./_pos_m[0].w / x_mn, 1./_pos_m[0].w / y_mn, 1./_pos_m[0].w, 1./_pos_m[0].w,
+        1./_pos_m[1].w / x_mn, 1./_pos_m[1].w / y_mn, 1./_pos_m[1].w, 1./_pos_m[1].w,
+        1./_pos_m[2].w / x_mn, 1./_pos_m[2].w / y_mn, 1./_pos_m[2].w, 1./_pos_m[2].w,
+        1.,             1.,             1., 1.
+    ));
 
     vec4 pos_m = _pos_m[gl_VertexIndex % 3];
 
@@ -376,15 +415,14 @@ void main() {
         );
     }
 
-    // mat4 disp_pos_m =  ( mat4(
-    //     0.707,  -0.408, 0., 0.,
-    //     0.,     0.816,  0., 0.,
-    //     -0.707, -0.408, 0., 0.,
-    //     0.,     0.,     0., 1.
-    // ) * _pos_m);
-    mat4 disp_pos_m =  ( projection_mat * _pos_m);
 
-    gl_Position = vec4(disp_pos_m[gl_VertexIndex % 3].xyzw );
+    mat4 disp_pos_m =  ( projection_mat *  _pos_m);
+
+    gl_Position = vec4(
+        disp_pos_m[gl_VertexIndex % 3].xyz,
+        // _pos_m[gl_VertexIndex % 3].z,
+        disp_pos_m[gl_VertexIndex % 3].w
+    );
 
 
     points[ 0 ][0] = ((disp_pos_m[0].x + 1.0) / 2.0) * float(WIGHT) ;
