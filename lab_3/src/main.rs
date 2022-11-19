@@ -355,7 +355,7 @@ void main() {
     float near = -0.1; //этими параметрами мы подгоняем координаты Z у моделей так, чтобы можно было определить какие модели слишком близко к нам, а какие слишком далеко (Z будет в диапазоне от -1 до 1 после преобразований перспективы), настолько что нам их не нужно рисовать на экране.
     float far = -1000.;
     mat4 perspective_projection = mat4(
-        1.0 / tan(fovy / 2.) / aspect, 0.,                      -1.,                            0.,
+        1.0 / tan(fovy / 2.) / aspect, 0.,                      0.,                            0.,
         0.,                             1.0 / tan(fovy / 2.),   0.,                             0.,
         0.,                             0.,                     (far + near) / (far - near),    (-2. * far * near) / (far - near),
         0.,                             0.,                     -1.,                            0.
@@ -365,35 +365,17 @@ void main() {
     mat4 resize_mat =  mat4(
         1. / x_mn,  0.,         0.,         0.,
         0.,         1. / y_mn,  0.,         0.,
-        0.,         0.,         1.,    0.,
+        0.,         0.,         1.,         0.,
         0.,         0.,         0.,         1.
     );
-    // mat4 resize_mat =  mat4(
-    //     1.,  0.,         0.,         0.,
-    //     0.,         1.,  0.,         0.,
-    //     0.,         0.,         1.,    0.,
-    //     0.,         0.,         0.,         1.
-    // );
 
     mat4 _pos_m = resize_mat * ( perspective_projection * ((move_matrix * ( position )))) ;
 
-    // _pos_m = matrixCompMult(_pos_m , mat4(
-    //     1./_pos_m[0].w * x_mn / 2., 1./_pos_m[0].w * y_mn / 2., 1., 1./_pos_m[0].w,
-    //     1./_pos_m[1].w * x_mn / 2., 1./_pos_m[1].w * y_mn / 2., 1., 1./_pos_m[1].w,
-    //     1./_pos_m[2].w * x_mn / 2., 1./_pos_m[2].w * y_mn / 2., 1., 1./_pos_m[2].w,
-    //     1.,             1.,             1., 1.
-    // ));
-    // _pos_m = matrixCompMult(_pos_m , mat4(
-    //     1./_pos_m[0].w, 1./_pos_m[0].w, 1., 1./_pos_m[0].w,
-    //     1./_pos_m[1].w, 1./_pos_m[1].w, 1., 1./_pos_m[1].w,
-    //     1./_pos_m[2].w, 1./_pos_m[2].w, 1., 1./_pos_m[2].w,
-    //     1.,             1.,             1., 1.
-    // ));
     _pos_m = matrixCompMult(_pos_m , mat4(
-        1./_pos_m[0].w / x_mn, 1./_pos_m[0].w / y_mn, 1./_pos_m[0].w, 1./_pos_m[0].w,
-        1./_pos_m[1].w / x_mn, 1./_pos_m[1].w / y_mn, 1./_pos_m[1].w, 1./_pos_m[1].w,
-        1./_pos_m[2].w / x_mn, 1./_pos_m[2].w / y_mn, 1./_pos_m[2].w, 1./_pos_m[2].w,
-        1.,             1.,             1., 1.
+        1./_pos_m[0].w / x_mn,  1./_pos_m[0].w / y_mn,  1./_pos_m[0].w, 1./_pos_m[0].w,
+        1./_pos_m[1].w / x_mn,  1./_pos_m[1].w / y_mn,  1./_pos_m[1].w, 1./_pos_m[1].w,
+        1./_pos_m[2].w / x_mn,  1./_pos_m[2].w / y_mn,  1./_pos_m[2].w, 1./_pos_m[2].w,
+        1.,                     1.,                     1.,             1.
     ));
 
     vec4 pos_m = _pos_m[gl_VertexIndex % 3];
@@ -419,8 +401,8 @@ void main() {
     mat4 disp_pos_m =  ( projection_mat *  _pos_m);
 
     gl_Position = vec4(
-        disp_pos_m[gl_VertexIndex % 3].xyz,
-        // _pos_m[gl_VertexIndex % 3].z,
+        disp_pos_m[gl_VertexIndex % 3].xy,
+        atan(_pos_m[gl_VertexIndex % 3].z * 0.01) * 2 / radians(180),
         disp_pos_m[gl_VertexIndex % 3].w
     );
 
@@ -1003,6 +985,8 @@ fn main() {
             Vertex::new([[0.0813173, 0.486, -0.0813173], [0.1062461, 0.486, -0.0440086], [0.0, 0.5, 0.0]], None, None, None, None, None),
             Vertex::new([[0.1062461, 0.486, -0.0440086], [0.115, 0.486, 0.0], [0.0, 0.5, 0.0]], None, None, None, None, None),
         ]);
+    figure1.move_matrix[[3, 2]] += 4.0;
+    figure1._changed.move_matrix = true;
 
     let mut vertex_buffer = CpuAccessibleBuffer::from_iter(
         device.clone(),
@@ -1280,6 +1264,7 @@ fn main() {
                     _ => {}
                 }
             }
+            println!("{}", figure1.move_matrix);
             let mut no_projections = true;
             for (keycode, projection_code) in &projection_rules {
                 match keyboard_pressed.get(keycode) {
