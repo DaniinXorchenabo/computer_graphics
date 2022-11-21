@@ -27,12 +27,12 @@ use vulkano::command_buffer::{
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType, QueueFamily};
 use vulkano::device::{Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo};
 use vulkano::image::view::ImageView;
-use vulkano::image::{ImageUsage, SwapchainImage};
+use vulkano::image::{AttachmentImage, ImageAccess, ImageUsage, SwapchainImage};
 use vulkano::instance::{Instance, InstanceCreateInfo};
 use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
 use vulkano::pipeline::graphics::vertex_input::BuffersDefinition;
 use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
-use vulkano::pipeline::{GraphicsPipeline, StateMode};
+use vulkano::pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint, StateMode};
 use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass};
 use vulkano::shader::ShaderModule;
 use vulkano::swapchain::{
@@ -48,8 +48,9 @@ use winit::window::{Window, WindowBuilder};
 use vulkano::shader::SpecializationConstants;
 use vulkano::shader::SpecializationMapEntry;
 use std::collections::HashMap;
+// use image::error::UnsupportedErrorKind::Format;
 // extern crate ndarray;
-
+use vulkano::{format::Format};
 use ndarray::{arr2, arr3, Array2, array, Array};
 use vulkano::pipeline::graphics::depth_stencil::{CompareOp, DepthState, DepthStencilState};
 use winit::event::VirtualKeyCode::V;
@@ -155,7 +156,6 @@ impl Changed {
     pub fn any(&self) -> bool {
         self.move_matrix | self.rotate_angels | self.scale | self.projection_flag
     }
-
 }
 
 #[derive(Default, Clone)]
@@ -201,7 +201,7 @@ impl Figure {
             scale: [1.0, 1.0, 1.0],
             _rotate_matrix: Array::eye(4),
             _changed: Changed::new(),
-            projection_mode: 0
+            projection_mode: 0,
             // _changed: false,
         }
     }
@@ -474,7 +474,7 @@ layout(location = 4) in vec4 fragColor;
 layout(location = 5) in vec3 contour_size;
 layout(location = 15) in mat4 points;
 layout(location = 19) in vec4[3] contour_colors_fr;
-layout (depth_any) out float gl_FragDepth;
+// layout (depth_any) out float gl_FragDepth;
 
 void main() {
     f_color = vec4(0., 0., 1., 1.);
@@ -508,12 +508,12 @@ void main() {
             f_color = vec4(0., 0., (atan(points[0][2] * 1) * 2 / radians(180)), 0.5);
             // gl_FragDepth = points[0][2];
         }
-        gl_FragDepth = 1. - ((atan(points[0][2] * 1.) * 2. / radians(180)) + 1.) / 2.;
+        // gl_FragDepth = 1. - ((atan(points[0][2] * 1.) * 2. / radians(180)) + 1.) / 2.;
         // f_color = vec4(0., 1., 0., 1.);
 
     } else {
         f_color = vec4(1., 0., 0., 1.);
-        gl_FragDepth = 1.0 - ((atan(points[0][2] * 1.) * 2. / radians(180)) + 1.) / 2.;
+        // gl_FragDepth = 1.0 - ((atan(points[0][2] * 1.) * 2. / radians(180)) + 1.) / 2.;
     }
 
 }"
@@ -552,11 +552,17 @@ fn get_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain<Window>>) -> Ar
                 store: Store,
                 format: swapchain.image_format(),  // set the format the same as the swapchain
                 samples: 1,
+            },
+            depth: {
+                load: Clear,
+                store: DontCare,
+                format: Format::D16_UNORM,
+                samples: 1,
             }
         },
         pass: {
             color: [color],
-            depth_stencil: {}
+            depth_stencil: {depth}
         }
     )
         .unwrap()
@@ -565,7 +571,19 @@ fn get_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain<Window>>) -> Ar
 fn get_framebuffers(
     images: &[Arc<SwapchainImage<Window>>],
     render_pass: Arc<RenderPass>,
+    device: Arc<Device>,
+    dimensions__: PhysicalSize<u32>,
 ) -> Vec<Arc<Framebuffer>> {
+    let dimensions = images[0].dimensions().width_height();
+    let depth_buffer = ImageView::new_default(
+        AttachmentImage::transient(
+            device.clone(),
+            dimensions,
+            // [dimensions__.width, dimensions__.height],
+            vulkano::format::Format::D16_UNORM,
+        ).unwrap(),
+    )
+        .unwrap();
     // depthTest;
     images
         .iter()
@@ -574,7 +592,7 @@ fn get_framebuffers(
             Framebuffer::new(
                 render_pass.clone(),
                 FramebufferCreateInfo {
-                    attachments: vec![view],
+                    attachments: vec![view, depth_buffer.clone()],
                     ..Default::default()
                 },
             )
@@ -612,6 +630,7 @@ fn get_pipeline(
         //     depth_bounds: None,
         //     stencil: None,
         // })
+        .depth_stencil_state(DepthStencilState::simple_depth_test())
         .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
         .build(device.clone())
         .unwrap()
@@ -638,13 +657,22 @@ fn get_command_buffers(
             builder
                 .begin_render_pass(
                     RenderPassBeginInfo {
-                        clear_values: vec![Some([1.0, 1.0, 1.0, 1.0].into())],
+                        clear_values: vec![
+                            Some([1.0, 1.0, 1.0, 1.0].into()),
+                            Some(1f32.into()),
+                        ],
                         ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
                     },
                     SubpassContents::Inline,
                 )
                 .unwrap()
                 .bind_pipeline_graphics(pipeline.clone())
+                // .bind_descriptor_sets(
+                //     PipelineBindPoint::Graphics,
+                //     pipeline.layout().clone(),
+                //     0,
+                //     set,
+                // )
                 .bind_vertex_buffers(0, vertex_buffer.clone())
                 .draw(vertex_buffer.len() as u32, 1, 0, 0)
                 .unwrap()
@@ -719,248 +747,253 @@ fn main() {
     };
 
     let render_pass = get_render_pass(device.clone(), swapchain.clone());
-    let framebuffers = get_framebuffers(&images, render_pass.clone());
+    let framebuffers = get_framebuffers(
+        &images,
+        render_pass.clone(),
+        device.clone(),
+        surface.window().inner_size(),
+    );
 
     vulkano::impl_vertex!(Vertex, position, move_matrix, contour, contour_colors, point_colors, projection_flag);
 
     let mut figure1 = Figure::new(
         vec![
-            Vertex::new([[0.115, -0.486, 0.0], [0.1062461, -0.486, 0.0440086], [0.0, -0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[0.1062461, -0.486, 0.0440086], [0.0813173, -0.486, 0.0813173], [0.0, -0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[0.0813173, -0.486, 0.0813173], [0.0440086, -0.486, 0.1062461], [0.0, -0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[0.0440086, -0.486, 0.1062461], [0.0, -0.486, 0.115], [0.0, -0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[0.0, -0.486, 0.115], [-0.0440086, -0.486, 0.1062461], [0.0, -0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.0440086, -0.486, 0.1062461], [-0.0813173, -0.486, 0.0813173], [0.0, -0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.0813173, -0.486, 0.0813173], [-0.1062461, -0.486, 0.0440086], [0.0, -0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.1062461, -0.486, 0.0440086], [-0.115, -0.486, 0.0], [0.0, -0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.115, -0.486, 0.0], [-0.1062461, -0.486, -0.0440086], [0.0, -0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.1062461, -0.486, -0.0440086], [-0.0813173, -0.486, -0.0813173], [0.0, -0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.0813173, -0.486, -0.0813173], [-0.0440086, -0.486, -0.1062461], [0.0, -0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.0440086, -0.486, -0.1062461], [-0.0, -0.486, -0.115], [0.0, -0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.0, -0.486, -0.115], [0.0440086, -0.486, -0.1062461], [0.0, -0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[0.0440086, -0.486, -0.1062461], [0.0813173, -0.486, -0.0813173], [0.0, -0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[0.0813173, -0.486, -0.0813173], [0.1062461, -0.486, -0.0440086], [0.0, -0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[0.1062461, -0.486, -0.0440086], [0.115, -0.486, 0.0], [0.0, -0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[0.1062461, -0.486, 0.0440086], [0.115, -0.486, 0.0], [0.2942356, -0.4, 0.0585271]],None, None, None, None, None),
-            Vertex::new([[0.0813173, -0.486, 0.0813173], [0.1062461, -0.486, 0.0440086], [0.2494409, -0.4, 0.1666711]],None, None, None, None, None),
-            Vertex::new([[0.0440086, -0.486, 0.1062461], [0.0813173, -0.486, 0.0813173], [0.1666711, -0.4, 0.2494409]],None, None, None, None, None),
-            Vertex::new([[0.0, -0.486, 0.115], [0.0440086, -0.486, 0.1062461], [0.0585271, -0.4, 0.2942356]],None, None, None, None, None),
-            Vertex::new([[-0.0440086, -0.486, 0.1062461], [0.0, -0.486, 0.115], [-0.0585271, -0.4, 0.2942356]],None, None, None, None, None),
-            Vertex::new([[-0.0813173, -0.486, 0.0813173], [-0.0440086, -0.486, 0.1062461], [-0.1666711, -0.4, 0.2494409]],None, None, None, None, None),
-            Vertex::new([[-0.1062461, -0.486, 0.0440086], [-0.0813173, -0.486, 0.0813173], [-0.2494409, -0.4, 0.1666711]],None, None, None, None, None),
-            Vertex::new([[-0.115, -0.486, 0.0], [-0.1062461, -0.486, 0.0440086], [-0.2942356, -0.4, 0.0585271]],None, None, None, None, None),
-            Vertex::new([[-0.1062461, -0.486, -0.0440086], [-0.115, -0.486, 0.0], [-0.2942356, -0.4, -0.0585271]],None, None, None, None, None),
-            Vertex::new([[-0.0813173, -0.486, -0.0813173], [-0.1062461, -0.486, -0.0440086], [-0.2494409, -0.4, -0.1666711]],None, None, None, None, None),
-            Vertex::new([[-0.0440086, -0.486, -0.1062461], [-0.0813173, -0.486, -0.0813173], [-0.1666711, -0.4, -0.2494409]],None, None, None, None, None),
-            Vertex::new([[-0.0, -0.486, -0.115], [-0.0440086, -0.486, -0.1062461], [-0.0585271, -0.4, -0.2942356]],None, None, None, None, None),
-            Vertex::new([[0.0440086, -0.486, -0.1062461], [-0.0, -0.486, -0.115], [0.0585271, -0.4, -0.2942356]],None, None, None, None, None),
-            Vertex::new([[0.0813173, -0.486, -0.0813173], [0.0440086, -0.486, -0.1062461], [0.1666711, -0.4, -0.2494409]],None, None, None, None, None),
-            Vertex::new([[0.1062461, -0.486, -0.0440086], [0.0813173, -0.486, -0.0813173], [0.2494409, -0.4, -0.1666711]],None, None, None, None, None),
-            Vertex::new([[0.115, -0.486, 0.0], [0.1062461, -0.486, -0.0440086], [0.2942356, -0.4, -0.0585271]],None, None, None, None, None),
-            Vertex::new([[0.2942356, -0.4, 0.0585271], [0.2494409, -0.4, 0.1666711], [0.1062461, -0.486, 0.0440086]],None, None, None, None, None),
-            Vertex::new([[0.2494409, -0.4, 0.1666711], [0.1666711, -0.4, 0.2494409], [0.0813173, -0.486, 0.0813173]],None, None, None, None, None),
-            Vertex::new([[0.1666711, -0.4, 0.2494409], [0.0585271, -0.4, 0.2942356], [0.0440086, -0.486, 0.1062461]],None, None, None, None, None),
-            Vertex::new([[0.0585271, -0.4, 0.2942356], [-0.0585271, -0.4, 0.2942356], [0.0, -0.486, 0.115]],None, None, None, None, None),
-            Vertex::new([[-0.0585271, -0.4, 0.2942356], [-0.1666711, -0.4, 0.2494409], [-0.0440086, -0.486, 0.1062461]],None, None, None, None, None),
-            Vertex::new([[-0.1666711, -0.4, 0.2494409], [-0.2494409, -0.4, 0.1666711], [-0.0813173, -0.486, 0.0813173]],None, None, None, None, None),
-            Vertex::new([[-0.2494409, -0.4, 0.1666711], [-0.2942356, -0.4, 0.0585271], [-0.1062461, -0.486, 0.0440086]],None, None, None, None, None),
-            Vertex::new([[-0.2942356, -0.4, 0.0585271], [-0.2942356, -0.4, -0.0585271], [-0.115, -0.486, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.2942356, -0.4, -0.0585271], [-0.2494409, -0.4, -0.1666711], [-0.1062461, -0.486, -0.0440086]],None, None, None, None, None),
-            Vertex::new([[-0.2494409, -0.4, -0.1666711], [-0.1666711, -0.4, -0.2494409], [-0.0813173, -0.486, -0.0813173]],None, None, None, None, None),
-            Vertex::new([[-0.1666711, -0.4, -0.2494409], [-0.0585271, -0.4, -0.2942356], [-0.0440086, -0.486, -0.1062461]],None, None, None, None, None),
-            Vertex::new([[-0.0585271, -0.4, -0.2942356], [0.0585271, -0.4, -0.2942356], [-0.0, -0.486, -0.115]],None, None, None, None, None),
-            Vertex::new([[0.0585271, -0.4, -0.2942356], [0.1666711, -0.4, -0.2494409], [0.0440086, -0.486, -0.1062461]],None, None, None, None, None),
-            Vertex::new([[0.1666711, -0.4, -0.2494409], [0.2494409, -0.4, -0.1666711], [0.0813173, -0.486, -0.0813173]],None, None, None, None, None),
-            Vertex::new([[0.2494409, -0.4, -0.1666711], [0.2942356, -0.4, -0.0585271], [0.1062461, -0.486, -0.0440086]],None, None, None, None, None),
-            Vertex::new([[0.2942356, -0.4, -0.0585271], [0.2942356, -0.4, 0.0585271], [0.115, -0.486, 0.0]],None, None, None, None, None),
-            Vertex::new([[0.46, -0.196, 0.0], [0.4249846, -0.196, 0.1760344], [0.2942356, -0.4, 0.0585271]],None, None, None, None, None),
-            Vertex::new([[0.4249846, -0.196, 0.1760344], [0.3252691, -0.196, 0.3252691], [0.2494409, -0.4, 0.1666711]],None, None, None, None, None),
-            Vertex::new([[0.3252691, -0.196, 0.3252691], [0.1760344, -0.196, 0.4249846], [0.1666711, -0.4, 0.2494409]],None, None, None, None, None),
-            Vertex::new([[0.1760344, -0.196, 0.4249846], [0.0, -0.196, 0.46], [0.0585271, -0.4, 0.2942356]],None, None, None, None, None),
-            Vertex::new([[0.0, -0.196, 0.46], [-0.1760344, -0.196, 0.4249846], [-0.0585271, -0.4, 0.2942356]],None, None, None, None, None),
-            Vertex::new([[-0.1760344, -0.196, 0.4249846], [-0.3252691, -0.196, 0.3252691], [-0.1666711, -0.4, 0.2494409]],None, None, None, None, None),
-            Vertex::new([[-0.3252691, -0.196, 0.3252691], [-0.4249846, -0.196, 0.1760344], [-0.2494409, -0.4, 0.1666711]],None, None, None, None, None),
-            Vertex::new([[-0.4249846, -0.196, 0.1760344], [-0.46, -0.196, 0.0], [-0.2942356, -0.4, 0.0585271]],None, None, None, None, None),
-            Vertex::new([[-0.46, -0.196, 0.0], [-0.4249846, -0.196, -0.1760344], [-0.2942356, -0.4, -0.0585271]],None, None, None, None, None),
-            Vertex::new([[-0.4249846, -0.196, -0.1760344], [-0.3252691, -0.196, -0.3252691], [-0.2494409, -0.4, -0.1666711]],None, None, None, None, None),
-            Vertex::new([[-0.3252691, -0.196, -0.3252691], [-0.1760344, -0.196, -0.4249846], [-0.1666711, -0.4, -0.2494409]],None, None, None, None, None),
-            Vertex::new([[-0.1760344, -0.196, -0.4249846], [-0.0, -0.196, -0.46], [-0.0585271, -0.4, -0.2942356]],None, None, None, None, None),
-            Vertex::new([[-0.0, -0.196, -0.46], [0.1760344, -0.196, -0.4249846], [0.0585271, -0.4, -0.2942356]],None, None, None, None, None),
-            Vertex::new([[0.1760344, -0.196, -0.4249846], [0.3252691, -0.196, -0.3252691], [0.1666711, -0.4, -0.2494409]],None, None, None, None, None),
-            Vertex::new([[0.3252691, -0.196, -0.3252691], [0.4249846, -0.196, -0.1760344], [0.2494409, -0.4, -0.1666711]],None, None, None, None, None),
-            Vertex::new([[0.4249846, -0.196, -0.1760344], [0.46, -0.196, 0.0], [0.2942356, -0.4, -0.0585271]],None, None, None, None, None),
-            Vertex::new([[0.2494409, -0.4, 0.1666711], [0.2942356, -0.4, 0.0585271], [0.4249846, -0.196, 0.1760344]],None, None, None, None, None),
-            Vertex::new([[0.1666711, -0.4, 0.2494409], [0.2494409, -0.4, 0.1666711], [0.3252691, -0.196, 0.3252691]],None, None, None, None, None),
-            Vertex::new([[0.0585271, -0.4, 0.2942356], [0.1666711, -0.4, 0.2494409], [0.1760344, -0.196, 0.4249846]],None, None, None, None, None),
-            Vertex::new([[-0.0585271, -0.4, 0.2942356], [0.0585271, -0.4, 0.2942356], [0.0, -0.196, 0.46]],None, None, None, None, None),
-            Vertex::new([[-0.1666711, -0.4, 0.2494409], [-0.0585271, -0.4, 0.2942356], [-0.1760344, -0.196, 0.4249846]],None, None, None, None, None),
-            Vertex::new([[-0.2494409, -0.4, 0.1666711], [-0.1666711, -0.4, 0.2494409], [-0.3252691, -0.196, 0.3252691]],None, None, None, None, None),
-            Vertex::new([[-0.2942356, -0.4, 0.0585271], [-0.2494409, -0.4, 0.1666711], [-0.4249846, -0.196, 0.1760344]],None, None, None, None, None),
-            Vertex::new([[-0.2942356, -0.4, -0.0585271], [-0.2942356, -0.4, 0.0585271], [-0.46, -0.196, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.2494409, -0.4, -0.1666711], [-0.2942356, -0.4, -0.0585271], [-0.4249846, -0.196, -0.1760344]],None, None, None, None, None),
-            Vertex::new([[-0.1666711, -0.4, -0.2494409], [-0.2494409, -0.4, -0.1666711], [-0.3252691, -0.196, -0.3252691]],None, None, None, None, None),
-            Vertex::new([[-0.0585271, -0.4, -0.2942356], [-0.1666711, -0.4, -0.2494409], [-0.1760344, -0.196, -0.4249846]],None, None, None, None, None),
-            Vertex::new([[0.0585271, -0.4, -0.2942356], [-0.0585271, -0.4, -0.2942356], [-0.0, -0.196, -0.46]],None, None, None, None, None),
-            Vertex::new([[0.1666711, -0.4, -0.2494409], [0.0585271, -0.4, -0.2942356], [0.1760344, -0.196, -0.4249846]],None, None, None, None, None),
-            Vertex::new([[0.2494409, -0.4, -0.1666711], [0.1666711, -0.4, -0.2494409], [0.3252691, -0.196, -0.3252691]],None, None, None, None, None),
-            Vertex::new([[0.2942356, -0.4, -0.0585271], [0.2494409, -0.4, -0.1666711], [0.4249846, -0.196, -0.1760344]],None, None, None, None, None),
-            Vertex::new([[0.2942356, -0.4, 0.0585271], [0.2942356, -0.4, -0.0585271], [0.46, -0.196, 0.0]],None, None, None, None, None),
-            Vertex::new([[0.4249846, -0.196, 0.1760344], [0.46, -0.196, 0.0], [0.9307652, -0.0, 0.1851407]],None, None, None, None, None),
-            Vertex::new([[0.3252691, -0.196, 0.3252691], [0.4249846, -0.196, 0.1760344], [0.7890647, -0.0, 0.5272362]],None, None, None, None, None),
-            Vertex::new([[0.1760344, -0.196, 0.4249846], [0.3252691, -0.196, 0.3252691], [0.5272362, -0.0, 0.7890647]],None, None, None, None, None),
-            Vertex::new([[0.0, -0.196, 0.46], [0.1760344, -0.196, 0.4249846], [0.1851407, -0.0, 0.9307652]],None, None, None, None, None),
-            Vertex::new([[-0.1760344, -0.196, 0.4249846], [0.0, -0.196, 0.46], [-0.1851407, -0.0, 0.9307652]],None, None, None, None, None),
-            Vertex::new([[-0.3252691, -0.196, 0.3252691], [-0.1760344, -0.196, 0.4249846], [-0.5272362, -0.0, 0.7890647]],None, None, None, None, None),
-            Vertex::new([[-0.4249846, -0.196, 0.1760344], [-0.3252691, -0.196, 0.3252691], [-0.7890647, -0.0, 0.5272362]],None, None, None, None, None),
-            Vertex::new([[-0.46, -0.196, 0.0], [-0.4249846, -0.196, 0.1760344], [-0.9307652, -0.0, 0.1851407]],None, None, None, None, None),
-            Vertex::new([[-0.4249846, -0.196, -0.1760344], [-0.46, -0.196, 0.0], [-0.9307652, -0.0, -0.1851407]],None, None, None, None, None),
-            Vertex::new([[-0.3252691, -0.196, -0.3252691], [-0.4249846, -0.196, -0.1760344], [-0.7890647, -0.0, -0.5272362]],None, None, None, None, None),
-            Vertex::new([[-0.1760344, -0.196, -0.4249846], [-0.3252691, -0.196, -0.3252691], [-0.5272362, -0.0, -0.7890647]],None, None, None, None, None),
-            Vertex::new([[-0.0, -0.196, -0.46], [-0.1760344, -0.196, -0.4249846], [-0.1851407, -0.0, -0.9307652]],None, None, None, None, None),
-            Vertex::new([[0.1760344, -0.196, -0.4249846], [-0.0, -0.196, -0.46], [0.1851407, -0.0, -0.9307652]],None, None, None, None, None),
-            Vertex::new([[0.3252691, -0.196, -0.3252691], [0.1760344, -0.196, -0.4249846], [0.5272362, -0.0, -0.7890647]],None, None, None, None, None),
-            Vertex::new([[0.4249846, -0.196, -0.1760344], [0.3252691, -0.196, -0.3252691], [0.7890647, -0.0, -0.5272362]],None, None, None, None, None),
-            Vertex::new([[0.46, -0.196, 0.0], [0.4249846, -0.196, -0.1760344], [0.9307652, -0.0, -0.1851407]],None, None, None, None, None),
-            Vertex::new([[0.9307652, -0.0, 0.1851407], [0.7890647, -0.0, 0.5272362], [0.4249846, -0.196, 0.1760344]],None, None, None, None, None),
-            Vertex::new([[0.7890647, -0.0, 0.5272362], [0.5272362, -0.0, 0.7890647], [0.3252691, -0.196, 0.3252691]],None, None, None, None, None),
-            Vertex::new([[0.5272362, -0.0, 0.7890647], [0.1851407, -0.0, 0.9307652], [0.1760344, -0.196, 0.4249846]],None, None, None, None, None),
-            Vertex::new([[0.1851407, -0.0, 0.9307652], [-0.1851407, -0.0, 0.9307652], [0.0, -0.196, 0.46]],None, None, None, None, None),
-            Vertex::new([[-0.1851407, -0.0, 0.9307652], [-0.5272362, -0.0, 0.7890647], [-0.1760344, -0.196, 0.4249846]],None, None, None, None, None),
-            Vertex::new([[-0.5272362, -0.0, 0.7890647], [-0.7890647, -0.0, 0.5272362], [-0.3252691, -0.196, 0.3252691]],None, None, None, None, None),
-            Vertex::new([[-0.7890647, -0.0, 0.5272362], [-0.9307652, -0.0, 0.1851407], [-0.4249846, -0.196, 0.1760344]],None, None, None, None, None),
-            Vertex::new([[-0.9307652, -0.0, 0.1851407], [-0.9307652, -0.0, -0.1851407], [-0.46, -0.196, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.9307652, -0.0, -0.1851407], [-0.7890647, -0.0, -0.5272362], [-0.4249846, -0.196, -0.1760344]],None, None, None, None, None),
-            Vertex::new([[-0.7890647, -0.0, -0.5272362], [-0.5272362, -0.0, -0.7890647], [-0.3252691, -0.196, -0.3252691]],None, None, None, None, None),
-            Vertex::new([[-0.5272362, -0.0, -0.7890647], [-0.1851407, -0.0, -0.9307652], [-0.1760344, -0.196, -0.4249846]],None, None, None, None, None),
-            Vertex::new([[-0.1851407, -0.0, -0.9307652], [0.1851407, -0.0, -0.9307652], [-0.0, -0.196, -0.46]],None, None, None, None, None),
-            Vertex::new([[0.1851407, -0.0, -0.9307652], [0.5272362, -0.0, -0.7890647], [0.1760344, -0.196, -0.4249846]],None, None, None, None, None),
-            Vertex::new([[0.5272362, -0.0, -0.7890647], [0.7890647, -0.0, -0.5272362], [0.3252691, -0.196, -0.3252691]],None, None, None, None, None),
-            Vertex::new([[0.7890647, -0.0, -0.5272362], [0.9307652, -0.0, -0.1851407], [0.4249846, -0.196, -0.1760344]],None, None, None, None, None),
-            Vertex::new([[0.9307652, -0.0, -0.1851407], [0.9307652, -0.0, 0.1851407], [0.46, -0.196, 0.0]],None, None, None, None, None),
-            Vertex::new([[0.46, 0.196, 0.0], [0.4249846, 0.196, 0.1760344], [0.9307652, -0.0, 0.1851407]],None, None, None, None, None),
-            Vertex::new([[0.4249846, 0.196, 0.1760344], [0.3252691, 0.196, 0.3252691], [0.7890647, -0.0, 0.5272362]],None, None, None, None, None),
-            Vertex::new([[0.3252691, 0.196, 0.3252691], [0.1760344, 0.196, 0.4249846], [0.5272362, -0.0, 0.7890647]],None, None, None, None, None),
-            Vertex::new([[0.1760344, 0.196, 0.4249846], [0.0, 0.196, 0.46], [0.1851407, -0.0, 0.9307652]],None, None, None, None, None),
-            Vertex::new([[0.0, 0.196, 0.46], [-0.1760344, 0.196, 0.4249846], [-0.1851407, -0.0, 0.9307652]],None, None, None, None, None),
-            Vertex::new([[-0.1760344, 0.196, 0.4249846], [-0.3252691, 0.196, 0.3252691], [-0.5272362, -0.0, 0.7890647]],None, None, None, None, None),
-            Vertex::new([[-0.3252691, 0.196, 0.3252691], [-0.4249846, 0.196, 0.1760344], [-0.7890647, -0.0, 0.5272362]],None, None, None, None, None),
-            Vertex::new([[-0.4249846, 0.196, 0.1760344], [-0.46, 0.196, 0.0], [-0.9307652, -0.0, 0.1851407]],None, None, None, None, None),
-            Vertex::new([[-0.46, 0.196, 0.0], [-0.4249846, 0.196, -0.1760344], [-0.9307652, -0.0, -0.1851407]],None, None, None, None, None),
-            Vertex::new([[-0.4249846, 0.196, -0.1760344], [-0.3252691, 0.196, -0.3252691], [-0.7890647, -0.0, -0.5272362]],None, None, None, None, None),
-            Vertex::new([[-0.3252691, 0.196, -0.3252691], [-0.1760344, 0.196, -0.4249846], [-0.5272362, -0.0, -0.7890647]],None, None, None, None, None),
-            Vertex::new([[-0.1760344, 0.196, -0.4249846], [-0.0, 0.196, -0.46], [-0.1851407, -0.0, -0.9307652]],None, None, None, None, None),
-            Vertex::new([[-0.0, 0.196, -0.46], [0.1760344, 0.196, -0.4249846], [0.1851407, -0.0, -0.9307652]],None, None, None, None, None),
-            Vertex::new([[0.1760344, 0.196, -0.4249846], [0.3252691, 0.196, -0.3252691], [0.5272362, -0.0, -0.7890647]],None, None, None, None, None),
-            Vertex::new([[0.3252691, 0.196, -0.3252691], [0.4249846, 0.196, -0.1760344], [0.7890647, -0.0, -0.5272362]],None, None, None, None, None),
-            Vertex::new([[0.4249846, 0.196, -0.1760344], [0.46, 0.196, 0.0], [0.9307652, -0.0, -0.1851407]],None, None, None, None, None),
-            Vertex::new([[0.7890647, -0.0, 0.5272362], [0.9307652, -0.0, 0.1851407], [0.4249846, 0.196, 0.1760344]],None, None, None, None, None),
-            Vertex::new([[0.5272362, -0.0, 0.7890647], [0.7890647, -0.0, 0.5272362], [0.3252691, 0.196, 0.3252691]],None, None, None, None, None),
-            Vertex::new([[0.1851407, -0.0, 0.9307652], [0.5272362, -0.0, 0.7890647], [0.1760344, 0.196, 0.4249846]],None, None, None, None, None),
-            Vertex::new([[-0.1851407, -0.0, 0.9307652], [0.1851407, -0.0, 0.9307652], [0.0, 0.196, 0.46]],None, None, None, None, None),
-            Vertex::new([[-0.5272362, -0.0, 0.7890647], [-0.1851407, -0.0, 0.9307652], [-0.1760344, 0.196, 0.4249846]],None, None, None, None, None),
-            Vertex::new([[-0.7890647, -0.0, 0.5272362], [-0.5272362, -0.0, 0.7890647], [-0.3252691, 0.196, 0.3252691]],None, None, None, None, None),
-            Vertex::new([[-0.9307652, -0.0, 0.1851407], [-0.7890647, -0.0, 0.5272362], [-0.4249846, 0.196, 0.1760344]],None, None, None, None, None),
-            Vertex::new([[-0.9307652, -0.0, -0.1851407], [-0.9307652, -0.0, 0.1851407], [-0.46, 0.196, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.7890647, -0.0, -0.5272362], [-0.9307652, -0.0, -0.1851407], [-0.4249846, 0.196, -0.1760344]],None, None, None, None, None),
-            Vertex::new([[-0.5272362, -0.0, -0.7890647], [-0.7890647, -0.0, -0.5272362], [-0.3252691, 0.196, -0.3252691]],None, None, None, None, None),
-            Vertex::new([[-0.1851407, -0.0, -0.9307652], [-0.5272362, -0.0, -0.7890647], [-0.1760344, 0.196, -0.4249846]],None, None, None, None, None),
-            Vertex::new([[0.1851407, -0.0, -0.9307652], [-0.1851407, -0.0, -0.9307652], [-0.0, 0.196, -0.46]],None, None, None, None, None),
-            Vertex::new([[0.5272362, -0.0, -0.7890647], [0.1851407, -0.0, -0.9307652], [0.1760344, 0.196, -0.4249846]],None, None, None, None, None),
-            Vertex::new([[0.7890647, -0.0, -0.5272362], [0.5272362, -0.0, -0.7890647], [0.3252691, 0.196, -0.3252691]],None, None, None, None, None),
-            Vertex::new([[0.9307652, -0.0, -0.1851407], [0.7890647, -0.0, -0.5272362], [0.4249846, 0.196, -0.1760344]],None, None, None, None, None),
-            Vertex::new([[0.9307652, -0.0, 0.1851407], [0.9307652, -0.0, -0.1851407], [0.46, 0.196, 0.0]],None, None, None, None, None),
-            Vertex::new([[0.4249846, 0.196, 0.1760344], [0.46, 0.196, 0.0], [0.2942356, 0.4, 0.0585271]],None, None, None, None, None),
-            Vertex::new([[0.3252691, 0.196, 0.3252691], [0.4249846, 0.196, 0.1760344], [0.2494409, 0.4, 0.1666711]],None, None, None, None, None),
-            Vertex::new([[0.1760344, 0.196, 0.4249846], [0.3252691, 0.196, 0.3252691], [0.1666711, 0.4, 0.2494409]],None, None, None, None, None),
-            Vertex::new([[0.0, 0.196, 0.46], [0.1760344, 0.196, 0.4249846], [0.0585271, 0.4, 0.2942356]],None, None, None, None, None),
-            Vertex::new([[-0.1760344, 0.196, 0.4249846], [0.0, 0.196, 0.46], [-0.0585271, 0.4, 0.2942356]],None, None, None, None, None),
-            Vertex::new([[-0.3252691, 0.196, 0.3252691], [-0.1760344, 0.196, 0.4249846], [-0.1666711, 0.4, 0.2494409]],None, None, None, None, None),
-            Vertex::new([[-0.4249846, 0.196, 0.1760344], [-0.3252691, 0.196, 0.3252691], [-0.2494409, 0.4, 0.1666711]],None, None, None, None, None),
-            Vertex::new([[-0.46, 0.196, 0.0], [-0.4249846, 0.196, 0.1760344], [-0.2942356, 0.4, 0.0585271]],None, None, None, None, None),
-            Vertex::new([[-0.4249846, 0.196, -0.1760344], [-0.46, 0.196, 0.0], [-0.2942356, 0.4, -0.0585271]],None, None, None, None, None),
-            Vertex::new([[-0.3252691, 0.196, -0.3252691], [-0.4249846, 0.196, -0.1760344], [-0.2494409, 0.4, -0.1666711]],None, None, None, None, None),
-            Vertex::new([[-0.1760344, 0.196, -0.4249846], [-0.3252691, 0.196, -0.3252691], [-0.1666711, 0.4, -0.2494409]],None, None, None, None, None),
-            Vertex::new([[-0.0, 0.196, -0.46], [-0.1760344, 0.196, -0.4249846], [-0.0585271, 0.4, -0.2942356]],None, None, None, None, None),
-            Vertex::new([[0.1760344, 0.196, -0.4249846], [-0.0, 0.196, -0.46], [0.0585271, 0.4, -0.2942356]],None, None, None, None, None),
-            Vertex::new([[0.3252691, 0.196, -0.3252691], [0.1760344, 0.196, -0.4249846], [0.1666711, 0.4, -0.2494409]],None, None, None, None, None),
-            Vertex::new([[0.4249846, 0.196, -0.1760344], [0.3252691, 0.196, -0.3252691], [0.2494409, 0.4, -0.1666711]],None, None, None, None, None),
-            Vertex::new([[0.46, 0.196, 0.0], [0.4249846, 0.196, -0.1760344], [0.2942356, 0.4, -0.0585271]],None, None, None, None, None),
-            Vertex::new([[0.2942356, 0.4, 0.0585271], [0.2494409, 0.4, 0.1666711], [0.4249846, 0.196, 0.1760344]],None, None, None, None, None),
-            Vertex::new([[0.2494409, 0.4, 0.1666711], [0.1666711, 0.4, 0.2494409], [0.3252691, 0.196, 0.3252691]],None, None, None, None, None),
-            Vertex::new([[0.1666711, 0.4, 0.2494409], [0.0585271, 0.4, 0.2942356], [0.1760344, 0.196, 0.4249846]],None, None, None, None, None),
-            Vertex::new([[0.0585271, 0.4, 0.2942356], [-0.0585271, 0.4, 0.2942356], [0.0, 0.196, 0.46]],None, None, None, None, None),
-            Vertex::new([[-0.0585271, 0.4, 0.2942356], [-0.1666711, 0.4, 0.2494409], [-0.1760344, 0.196, 0.4249846]],None, None, None, None, None),
-            Vertex::new([[-0.1666711, 0.4, 0.2494409], [-0.2494409, 0.4, 0.1666711], [-0.3252691, 0.196, 0.3252691]],None, None, None, None, None),
-            Vertex::new([[-0.2494409, 0.4, 0.1666711], [-0.2942356, 0.4, 0.0585271], [-0.4249846, 0.196, 0.1760344]],None, None, None, None, None),
-            Vertex::new([[-0.2942356, 0.4, 0.0585271], [-0.2942356, 0.4, -0.0585271], [-0.46, 0.196, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.2942356, 0.4, -0.0585271], [-0.2494409, 0.4, -0.1666711], [-0.4249846, 0.196, -0.1760344]],None, None, None, None, None),
-            Vertex::new([[-0.2494409, 0.4, -0.1666711], [-0.1666711, 0.4, -0.2494409], [-0.3252691, 0.196, -0.3252691]],None, None, None, None, None),
-            Vertex::new([[-0.1666711, 0.4, -0.2494409], [-0.0585271, 0.4, -0.2942356], [-0.1760344, 0.196, -0.4249846]],None, None, None, None, None),
-            Vertex::new([[-0.0585271, 0.4, -0.2942356], [0.0585271, 0.4, -0.2942356], [-0.0, 0.196, -0.46]],None, None, None, None, None),
-            Vertex::new([[0.0585271, 0.4, -0.2942356], [0.1666711, 0.4, -0.2494409], [0.1760344, 0.196, -0.4249846]],None, None, None, None, None),
-            Vertex::new([[0.1666711, 0.4, -0.2494409], [0.2494409, 0.4, -0.1666711], [0.3252691, 0.196, -0.3252691]],None, None, None, None, None),
-            Vertex::new([[0.2494409, 0.4, -0.1666711], [0.2942356, 0.4, -0.0585271], [0.4249846, 0.196, -0.1760344]],None, None, None, None, None),
-            Vertex::new([[0.2942356, 0.4, -0.0585271], [0.2942356, 0.4, 0.0585271], [0.46, 0.196, 0.0]],None, None, None, None, None),
-            Vertex::new([[0.3292503, 0.23, 0.2739637], [0.3791081, 0.23, 0.1993463], [0.6004535, 0.502142, 0.4012102]],None, None, None, None, None),
-            Vertex::new([[0.3791081, 0.23, 0.1993463], [0.2913362, 0.332, 0.1946646], [0.6004535, 0.502142, 0.4012102]],None, None, None, None, None),
-            Vertex::new([[0.2913362, 0.332, 0.1946646], [0.3292503, 0.23, 0.2739637], [0.6004535, 0.502142, 0.4012102]],None, None, None, None, None),
-            Vertex::new([[-0.2739637, 0.23, 0.3292503], [-0.1993463, 0.23, 0.3791081], [-0.4012102, 0.502142, 0.6004535]],None, None, None, None, None),
-            Vertex::new([[-0.1993463, 0.23, 0.3791081], [-0.1946646, 0.332, 0.2913362], [-0.4012102, 0.502142, 0.6004535]],None, None, None, None, None),
-            Vertex::new([[-0.1946646, 0.332, 0.2913362], [-0.2739637, 0.23, 0.3292503], [-0.4012102, 0.502142, 0.6004535]],None, None, None, None, None),
-            Vertex::new([[-0.3292503, 0.23, -0.2739637], [-0.3791081, 0.23, -0.1993463], [-0.6004535, 0.502142, -0.4012102]],None, None, None, None, None),
-            Vertex::new([[-0.3791081, 0.23, -0.1993463], [-0.2913362, 0.332, -0.1946646], [-0.6004535, 0.502142, -0.4012102]],None, None, None, None, None),
-            Vertex::new([[-0.2913362, 0.332, -0.1946646], [-0.3292503, 0.23, -0.2739637], [-0.6004535, 0.502142, -0.4012102]],None, None, None, None, None),
-            Vertex::new([[0.2739637, 0.23, -0.3292503], [0.1993463, 0.23, -0.3791081], [0.4012102, 0.502142, -0.6004535]],None, None, None, None, None),
-            Vertex::new([[0.1993463, 0.23, -0.3791081], [0.1946646, 0.332, -0.2913362], [0.4012102, 0.502142, -0.6004535]],None, None, None, None, None),
-            Vertex::new([[0.1946646, 0.332, -0.2913362], [0.2739637, 0.23, -0.3292503], [0.4012102, 0.502142, -0.6004535]],None, None, None, None, None),
-            Vertex::new([[0.115, 0.486, 0.0], [0.1062461, 0.486, 0.0440086], [0.2942356, 0.4, 0.0585271]],None, None, None, None, None),
-            Vertex::new([[0.1062461, 0.486, 0.0440086], [0.0813173, 0.486, 0.0813173], [0.2494409, 0.4, 0.1666711]],None, None, None, None, None),
-            Vertex::new([[0.0813173, 0.486, 0.0813173], [0.0440086, 0.486, 0.1062461], [0.1666711, 0.4, 0.2494409]],None, None, None, None, None),
-            Vertex::new([[0.0440086, 0.486, 0.1062461], [0.0, 0.486, 0.115], [0.0585271, 0.4, 0.2942356]],None, None, None, None, None),
-            Vertex::new([[0.0, 0.486, 0.115], [-0.0440086, 0.486, 0.1062461], [-0.0585271, 0.4, 0.2942356]],None, None, None, None, None),
-            Vertex::new([[-0.0440086, 0.486, 0.1062461], [-0.0813173, 0.486, 0.0813173], [-0.1666711, 0.4, 0.2494409]],None, None, None, None, None),
-            Vertex::new([[-0.0813173, 0.486, 0.0813173], [-0.1062461, 0.486, 0.0440086], [-0.2494409, 0.4, 0.1666711]],None, None, None, None, None),
-            Vertex::new([[-0.1062461, 0.486, 0.0440086], [-0.115, 0.486, 0.0], [-0.2942356, 0.4, 0.0585271]],None, None, None, None, None),
-            Vertex::new([[-0.115, 0.486, 0.0], [-0.1062461, 0.486, -0.0440086], [-0.2942356, 0.4, -0.0585271]],None, None, None, None, None),
-            Vertex::new([[-0.1062461, 0.486, -0.0440086], [-0.0813173, 0.486, -0.0813173], [-0.2494409, 0.4, -0.1666711]],None, None, None, None, None),
-            Vertex::new([[-0.0813173, 0.486, -0.0813173], [-0.0440086, 0.486, -0.1062461], [-0.1666711, 0.4, -0.2494409]],None, None, None, None, None),
-            Vertex::new([[-0.0440086, 0.486, -0.1062461], [-0.0, 0.486, -0.115], [-0.0585271, 0.4, -0.2942356]],None, None, None, None, None),
-            Vertex::new([[-0.0, 0.486, -0.115], [0.0440086, 0.486, -0.1062461], [0.0585271, 0.4, -0.2942356]],None, None, None, None, None),
-            Vertex::new([[0.0440086, 0.486, -0.1062461], [0.0813173, 0.486, -0.0813173], [0.1666711, 0.4, -0.2494409]],None, None, None, None, None),
-            Vertex::new([[0.0813173, 0.486, -0.0813173], [0.1062461, 0.486, -0.0440086], [0.2494409, 0.4, -0.1666711]],None, None, None, None, None),
-            Vertex::new([[0.1062461, 0.486, -0.0440086], [0.115, 0.486, 0.0], [0.2942356, 0.4, -0.0585271]],None, None, None, None, None),
-            Vertex::new([[0.2494409, 0.4, 0.1666711], [0.2942356, 0.4, 0.0585271], [0.1062461, 0.486, 0.0440086]],None, None, None, None, None),
-            Vertex::new([[0.1666711, 0.4, 0.2494409], [0.2494409, 0.4, 0.1666711], [0.0813173, 0.486, 0.0813173]],None, None, None, None, None),
-            Vertex::new([[0.0585271, 0.4, 0.2942356], [0.1666711, 0.4, 0.2494409], [0.0440086, 0.486, 0.1062461]],None, None, None, None, None),
-            Vertex::new([[-0.0585271, 0.4, 0.2942356], [0.0585271, 0.4, 0.2942356], [0.0, 0.486, 0.115]],None, None, None, None, None),
-            Vertex::new([[-0.1666711, 0.4, 0.2494409], [-0.0585271, 0.4, 0.2942356], [-0.0440086, 0.486, 0.1062461]],None, None, None, None, None),
-            Vertex::new([[-0.2494409, 0.4, 0.1666711], [-0.1666711, 0.4, 0.2494409], [-0.0813173, 0.486, 0.0813173]],None, None, None, None, None),
-            Vertex::new([[-0.2942356, 0.4, 0.0585271], [-0.2494409, 0.4, 0.1666711], [-0.1062461, 0.486, 0.0440086]],None, None, None, None, None),
-            Vertex::new([[-0.2942356, 0.4, -0.0585271], [-0.2942356, 0.4, 0.0585271], [-0.115, 0.486, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.2494409, 0.4, -0.1666711], [-0.2942356, 0.4, -0.0585271], [-0.1062461, 0.486, -0.0440086]],None, None, None, None, None),
-            Vertex::new([[-0.1666711, 0.4, -0.2494409], [-0.2494409, 0.4, -0.1666711], [-0.0813173, 0.486, -0.0813173]],None, None, None, None, None),
-            Vertex::new([[-0.0585271, 0.4, -0.2942356], [-0.1666711, 0.4, -0.2494409], [-0.0440086, 0.486, -0.1062461]],None, None, None, None, None),
-            Vertex::new([[0.0585271, 0.4, -0.2942356], [-0.0585271, 0.4, -0.2942356], [-0.0, 0.486, -0.115]],None, None, None, None, None),
-            Vertex::new([[0.1666711, 0.4, -0.2494409], [0.0585271, 0.4, -0.2942356], [0.0440086, 0.486, -0.1062461]],None, None, None, None, None),
-            Vertex::new([[0.2494409, 0.4, -0.1666711], [0.1666711, 0.4, -0.2494409], [0.0813173, 0.486, -0.0813173]],None, None, None, None, None),
-            Vertex::new([[0.2942356, 0.4, -0.0585271], [0.2494409, 0.4, -0.1666711], [0.1062461, 0.486, -0.0440086]],None, None, None, None, None),
-            Vertex::new([[0.2942356, 0.4, 0.0585271], [0.2942356, 0.4, -0.0585271], [0.115, 0.486, 0.0]],None, None, None, None, None),
-            Vertex::new([[0.115, 0.486, 0.0], [0.1062461, 0.486, 0.0440086], [0.0, 0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[0.1062461, 0.486, 0.0440086], [0.0813173, 0.486, 0.0813173], [0.0, 0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[0.0813173, 0.486, 0.0813173], [0.0440086, 0.486, 0.1062461], [0.0, 0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[0.0440086, 0.486, 0.1062461], [0.0, 0.486, 0.115], [0.0, 0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[0.0, 0.486, 0.115], [-0.0440086, 0.486, 0.1062461], [0.0, 0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.0440086, 0.486, 0.1062461], [-0.0813173, 0.486, 0.0813173], [0.0, 0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.0813173, 0.486, 0.0813173], [-0.1062461, 0.486, 0.0440086], [0.0, 0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.1062461, 0.486, 0.0440086], [-0.115, 0.486, 0.0], [0.0, 0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.115, 0.486, 0.0], [-0.1062461, 0.486, -0.0440086], [0.0, 0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.1062461, 0.486, -0.0440086], [-0.0813173, 0.486, -0.0813173], [0.0, 0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.0813173, 0.486, -0.0813173], [-0.0440086, 0.486, -0.1062461], [0.0, 0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.0440086, 0.486, -0.1062461], [-0.0, 0.486, -0.115], [0.0, 0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[-0.0, 0.486, -0.115], [0.0440086, 0.486, -0.1062461], [0.0, 0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[0.0440086, 0.486, -0.1062461], [0.0813173, 0.486, -0.0813173], [0.0, 0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[0.0813173, 0.486, -0.0813173], [0.1062461, 0.486, -0.0440086], [0.0, 0.5, 0.0]],None, None, None, None, None),
-            Vertex::new([[0.1062461, 0.486, -0.0440086], [0.115, 0.486, 0.0], [0.0, 0.5, 0.0]],None, None, None, None, None)
+            Vertex::new([[0.115, -0.486, 0.0], [0.1062461, -0.486, 0.0440086], [0.0, -0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[0.1062461, -0.486, 0.0440086], [0.0813173, -0.486, 0.0813173], [0.0, -0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[0.0813173, -0.486, 0.0813173], [0.0440086, -0.486, 0.1062461], [0.0, -0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[0.0440086, -0.486, 0.1062461], [0.0, -0.486, 0.115], [0.0, -0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[0.0, -0.486, 0.115], [-0.0440086, -0.486, 0.1062461], [0.0, -0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.0440086, -0.486, 0.1062461], [-0.0813173, -0.486, 0.0813173], [0.0, -0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.0813173, -0.486, 0.0813173], [-0.1062461, -0.486, 0.0440086], [0.0, -0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.1062461, -0.486, 0.0440086], [-0.115, -0.486, 0.0], [0.0, -0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.115, -0.486, 0.0], [-0.1062461, -0.486, -0.0440086], [0.0, -0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.1062461, -0.486, -0.0440086], [-0.0813173, -0.486, -0.0813173], [0.0, -0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.0813173, -0.486, -0.0813173], [-0.0440086, -0.486, -0.1062461], [0.0, -0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.0440086, -0.486, -0.1062461], [-0.0, -0.486, -0.115], [0.0, -0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.0, -0.486, -0.115], [0.0440086, -0.486, -0.1062461], [0.0, -0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[0.0440086, -0.486, -0.1062461], [0.0813173, -0.486, -0.0813173], [0.0, -0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[0.0813173, -0.486, -0.0813173], [0.1062461, -0.486, -0.0440086], [0.0, -0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[0.1062461, -0.486, -0.0440086], [0.115, -0.486, 0.0], [0.0, -0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[0.1062461, -0.486, 0.0440086], [0.115, -0.486, 0.0], [0.2942356, -0.4, 0.0585271]], None, None, None, None, None),
+            Vertex::new([[0.0813173, -0.486, 0.0813173], [0.1062461, -0.486, 0.0440086], [0.2494409, -0.4, 0.1666711]], None, None, None, None, None),
+            Vertex::new([[0.0440086, -0.486, 0.1062461], [0.0813173, -0.486, 0.0813173], [0.1666711, -0.4, 0.2494409]], None, None, None, None, None),
+            Vertex::new([[0.0, -0.486, 0.115], [0.0440086, -0.486, 0.1062461], [0.0585271, -0.4, 0.2942356]], None, None, None, None, None),
+            Vertex::new([[-0.0440086, -0.486, 0.1062461], [0.0, -0.486, 0.115], [-0.0585271, -0.4, 0.2942356]], None, None, None, None, None),
+            Vertex::new([[-0.0813173, -0.486, 0.0813173], [-0.0440086, -0.486, 0.1062461], [-0.1666711, -0.4, 0.2494409]], None, None, None, None, None),
+            Vertex::new([[-0.1062461, -0.486, 0.0440086], [-0.0813173, -0.486, 0.0813173], [-0.2494409, -0.4, 0.1666711]], None, None, None, None, None),
+            Vertex::new([[-0.115, -0.486, 0.0], [-0.1062461, -0.486, 0.0440086], [-0.2942356, -0.4, 0.0585271]], None, None, None, None, None),
+            Vertex::new([[-0.1062461, -0.486, -0.0440086], [-0.115, -0.486, 0.0], [-0.2942356, -0.4, -0.0585271]], None, None, None, None, None),
+            Vertex::new([[-0.0813173, -0.486, -0.0813173], [-0.1062461, -0.486, -0.0440086], [-0.2494409, -0.4, -0.1666711]], None, None, None, None, None),
+            Vertex::new([[-0.0440086, -0.486, -0.1062461], [-0.0813173, -0.486, -0.0813173], [-0.1666711, -0.4, -0.2494409]], None, None, None, None, None),
+            Vertex::new([[-0.0, -0.486, -0.115], [-0.0440086, -0.486, -0.1062461], [-0.0585271, -0.4, -0.2942356]], None, None, None, None, None),
+            Vertex::new([[0.0440086, -0.486, -0.1062461], [-0.0, -0.486, -0.115], [0.0585271, -0.4, -0.2942356]], None, None, None, None, None),
+            Vertex::new([[0.0813173, -0.486, -0.0813173], [0.0440086, -0.486, -0.1062461], [0.1666711, -0.4, -0.2494409]], None, None, None, None, None),
+            Vertex::new([[0.1062461, -0.486, -0.0440086], [0.0813173, -0.486, -0.0813173], [0.2494409, -0.4, -0.1666711]], None, None, None, None, None),
+            Vertex::new([[0.115, -0.486, 0.0], [0.1062461, -0.486, -0.0440086], [0.2942356, -0.4, -0.0585271]], None, None, None, None, None),
+            Vertex::new([[0.2942356, -0.4, 0.0585271], [0.2494409, -0.4, 0.1666711], [0.1062461, -0.486, 0.0440086]], None, None, None, None, None),
+            Vertex::new([[0.2494409, -0.4, 0.1666711], [0.1666711, -0.4, 0.2494409], [0.0813173, -0.486, 0.0813173]], None, None, None, None, None),
+            Vertex::new([[0.1666711, -0.4, 0.2494409], [0.0585271, -0.4, 0.2942356], [0.0440086, -0.486, 0.1062461]], None, None, None, None, None),
+            Vertex::new([[0.0585271, -0.4, 0.2942356], [-0.0585271, -0.4, 0.2942356], [0.0, -0.486, 0.115]], None, None, None, None, None),
+            Vertex::new([[-0.0585271, -0.4, 0.2942356], [-0.1666711, -0.4, 0.2494409], [-0.0440086, -0.486, 0.1062461]], None, None, None, None, None),
+            Vertex::new([[-0.1666711, -0.4, 0.2494409], [-0.2494409, -0.4, 0.1666711], [-0.0813173, -0.486, 0.0813173]], None, None, None, None, None),
+            Vertex::new([[-0.2494409, -0.4, 0.1666711], [-0.2942356, -0.4, 0.0585271], [-0.1062461, -0.486, 0.0440086]], None, None, None, None, None),
+            Vertex::new([[-0.2942356, -0.4, 0.0585271], [-0.2942356, -0.4, -0.0585271], [-0.115, -0.486, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.2942356, -0.4, -0.0585271], [-0.2494409, -0.4, -0.1666711], [-0.1062461, -0.486, -0.0440086]], None, None, None, None, None),
+            Vertex::new([[-0.2494409, -0.4, -0.1666711], [-0.1666711, -0.4, -0.2494409], [-0.0813173, -0.486, -0.0813173]], None, None, None, None, None),
+            Vertex::new([[-0.1666711, -0.4, -0.2494409], [-0.0585271, -0.4, -0.2942356], [-0.0440086, -0.486, -0.1062461]], None, None, None, None, None),
+            Vertex::new([[-0.0585271, -0.4, -0.2942356], [0.0585271, -0.4, -0.2942356], [-0.0, -0.486, -0.115]], None, None, None, None, None),
+            Vertex::new([[0.0585271, -0.4, -0.2942356], [0.1666711, -0.4, -0.2494409], [0.0440086, -0.486, -0.1062461]], None, None, None, None, None),
+            Vertex::new([[0.1666711, -0.4, -0.2494409], [0.2494409, -0.4, -0.1666711], [0.0813173, -0.486, -0.0813173]], None, None, None, None, None),
+            Vertex::new([[0.2494409, -0.4, -0.1666711], [0.2942356, -0.4, -0.0585271], [0.1062461, -0.486, -0.0440086]], None, None, None, None, None),
+            Vertex::new([[0.2942356, -0.4, -0.0585271], [0.2942356, -0.4, 0.0585271], [0.115, -0.486, 0.0]], None, None, None, None, None),
+            Vertex::new([[0.46, -0.196, 0.0], [0.4249846, -0.196, 0.1760344], [0.2942356, -0.4, 0.0585271]], None, None, None, None, None),
+            Vertex::new([[0.4249846, -0.196, 0.1760344], [0.3252691, -0.196, 0.3252691], [0.2494409, -0.4, 0.1666711]], None, None, None, None, None),
+            Vertex::new([[0.3252691, -0.196, 0.3252691], [0.1760344, -0.196, 0.4249846], [0.1666711, -0.4, 0.2494409]], None, None, None, None, None),
+            Vertex::new([[0.1760344, -0.196, 0.4249846], [0.0, -0.196, 0.46], [0.0585271, -0.4, 0.2942356]], None, None, None, None, None),
+            Vertex::new([[0.0, -0.196, 0.46], [-0.1760344, -0.196, 0.4249846], [-0.0585271, -0.4, 0.2942356]], None, None, None, None, None),
+            Vertex::new([[-0.1760344, -0.196, 0.4249846], [-0.3252691, -0.196, 0.3252691], [-0.1666711, -0.4, 0.2494409]], None, None, None, None, None),
+            Vertex::new([[-0.3252691, -0.196, 0.3252691], [-0.4249846, -0.196, 0.1760344], [-0.2494409, -0.4, 0.1666711]], None, None, None, None, None),
+            Vertex::new([[-0.4249846, -0.196, 0.1760344], [-0.46, -0.196, 0.0], [-0.2942356, -0.4, 0.0585271]], None, None, None, None, None),
+            Vertex::new([[-0.46, -0.196, 0.0], [-0.4249846, -0.196, -0.1760344], [-0.2942356, -0.4, -0.0585271]], None, None, None, None, None),
+            Vertex::new([[-0.4249846, -0.196, -0.1760344], [-0.3252691, -0.196, -0.3252691], [-0.2494409, -0.4, -0.1666711]], None, None, None, None, None),
+            Vertex::new([[-0.3252691, -0.196, -0.3252691], [-0.1760344, -0.196, -0.4249846], [-0.1666711, -0.4, -0.2494409]], None, None, None, None, None),
+            Vertex::new([[-0.1760344, -0.196, -0.4249846], [-0.0, -0.196, -0.46], [-0.0585271, -0.4, -0.2942356]], None, None, None, None, None),
+            Vertex::new([[-0.0, -0.196, -0.46], [0.1760344, -0.196, -0.4249846], [0.0585271, -0.4, -0.2942356]], None, None, None, None, None),
+            Vertex::new([[0.1760344, -0.196, -0.4249846], [0.3252691, -0.196, -0.3252691], [0.1666711, -0.4, -0.2494409]], None, None, None, None, None),
+            Vertex::new([[0.3252691, -0.196, -0.3252691], [0.4249846, -0.196, -0.1760344], [0.2494409, -0.4, -0.1666711]], None, None, None, None, None),
+            Vertex::new([[0.4249846, -0.196, -0.1760344], [0.46, -0.196, 0.0], [0.2942356, -0.4, -0.0585271]], None, None, None, None, None),
+            Vertex::new([[0.2494409, -0.4, 0.1666711], [0.2942356, -0.4, 0.0585271], [0.4249846, -0.196, 0.1760344]], None, None, None, None, None),
+            Vertex::new([[0.1666711, -0.4, 0.2494409], [0.2494409, -0.4, 0.1666711], [0.3252691, -0.196, 0.3252691]], None, None, None, None, None),
+            Vertex::new([[0.0585271, -0.4, 0.2942356], [0.1666711, -0.4, 0.2494409], [0.1760344, -0.196, 0.4249846]], None, None, None, None, None),
+            Vertex::new([[-0.0585271, -0.4, 0.2942356], [0.0585271, -0.4, 0.2942356], [0.0, -0.196, 0.46]], None, None, None, None, None),
+            Vertex::new([[-0.1666711, -0.4, 0.2494409], [-0.0585271, -0.4, 0.2942356], [-0.1760344, -0.196, 0.4249846]], None, None, None, None, None),
+            Vertex::new([[-0.2494409, -0.4, 0.1666711], [-0.1666711, -0.4, 0.2494409], [-0.3252691, -0.196, 0.3252691]], None, None, None, None, None),
+            Vertex::new([[-0.2942356, -0.4, 0.0585271], [-0.2494409, -0.4, 0.1666711], [-0.4249846, -0.196, 0.1760344]], None, None, None, None, None),
+            Vertex::new([[-0.2942356, -0.4, -0.0585271], [-0.2942356, -0.4, 0.0585271], [-0.46, -0.196, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.2494409, -0.4, -0.1666711], [-0.2942356, -0.4, -0.0585271], [-0.4249846, -0.196, -0.1760344]], None, None, None, None, None),
+            Vertex::new([[-0.1666711, -0.4, -0.2494409], [-0.2494409, -0.4, -0.1666711], [-0.3252691, -0.196, -0.3252691]], None, None, None, None, None),
+            Vertex::new([[-0.0585271, -0.4, -0.2942356], [-0.1666711, -0.4, -0.2494409], [-0.1760344, -0.196, -0.4249846]], None, None, None, None, None),
+            Vertex::new([[0.0585271, -0.4, -0.2942356], [-0.0585271, -0.4, -0.2942356], [-0.0, -0.196, -0.46]], None, None, None, None, None),
+            Vertex::new([[0.1666711, -0.4, -0.2494409], [0.0585271, -0.4, -0.2942356], [0.1760344, -0.196, -0.4249846]], None, None, None, None, None),
+            Vertex::new([[0.2494409, -0.4, -0.1666711], [0.1666711, -0.4, -0.2494409], [0.3252691, -0.196, -0.3252691]], None, None, None, None, None),
+            Vertex::new([[0.2942356, -0.4, -0.0585271], [0.2494409, -0.4, -0.1666711], [0.4249846, -0.196, -0.1760344]], None, None, None, None, None),
+            Vertex::new([[0.2942356, -0.4, 0.0585271], [0.2942356, -0.4, -0.0585271], [0.46, -0.196, 0.0]], None, None, None, None, None),
+            Vertex::new([[0.4249846, -0.196, 0.1760344], [0.46, -0.196, 0.0], [0.9307652, -0.0, 0.1851407]], None, None, None, None, None),
+            Vertex::new([[0.3252691, -0.196, 0.3252691], [0.4249846, -0.196, 0.1760344], [0.7890647, -0.0, 0.5272362]], None, None, None, None, None),
+            Vertex::new([[0.1760344, -0.196, 0.4249846], [0.3252691, -0.196, 0.3252691], [0.5272362, -0.0, 0.7890647]], None, None, None, None, None),
+            Vertex::new([[0.0, -0.196, 0.46], [0.1760344, -0.196, 0.4249846], [0.1851407, -0.0, 0.9307652]], None, None, None, None, None),
+            Vertex::new([[-0.1760344, -0.196, 0.4249846], [0.0, -0.196, 0.46], [-0.1851407, -0.0, 0.9307652]], None, None, None, None, None),
+            Vertex::new([[-0.3252691, -0.196, 0.3252691], [-0.1760344, -0.196, 0.4249846], [-0.5272362, -0.0, 0.7890647]], None, None, None, None, None),
+            Vertex::new([[-0.4249846, -0.196, 0.1760344], [-0.3252691, -0.196, 0.3252691], [-0.7890647, -0.0, 0.5272362]], None, None, None, None, None),
+            Vertex::new([[-0.46, -0.196, 0.0], [-0.4249846, -0.196, 0.1760344], [-0.9307652, -0.0, 0.1851407]], None, None, None, None, None),
+            Vertex::new([[-0.4249846, -0.196, -0.1760344], [-0.46, -0.196, 0.0], [-0.9307652, -0.0, -0.1851407]], None, None, None, None, None),
+            Vertex::new([[-0.3252691, -0.196, -0.3252691], [-0.4249846, -0.196, -0.1760344], [-0.7890647, -0.0, -0.5272362]], None, None, None, None, None),
+            Vertex::new([[-0.1760344, -0.196, -0.4249846], [-0.3252691, -0.196, -0.3252691], [-0.5272362, -0.0, -0.7890647]], None, None, None, None, None),
+            Vertex::new([[-0.0, -0.196, -0.46], [-0.1760344, -0.196, -0.4249846], [-0.1851407, -0.0, -0.9307652]], None, None, None, None, None),
+            Vertex::new([[0.1760344, -0.196, -0.4249846], [-0.0, -0.196, -0.46], [0.1851407, -0.0, -0.9307652]], None, None, None, None, None),
+            Vertex::new([[0.3252691, -0.196, -0.3252691], [0.1760344, -0.196, -0.4249846], [0.5272362, -0.0, -0.7890647]], None, None, None, None, None),
+            Vertex::new([[0.4249846, -0.196, -0.1760344], [0.3252691, -0.196, -0.3252691], [0.7890647, -0.0, -0.5272362]], None, None, None, None, None),
+            Vertex::new([[0.46, -0.196, 0.0], [0.4249846, -0.196, -0.1760344], [0.9307652, -0.0, -0.1851407]], None, None, None, None, None),
+            Vertex::new([[0.9307652, -0.0, 0.1851407], [0.7890647, -0.0, 0.5272362], [0.4249846, -0.196, 0.1760344]], None, None, None, None, None),
+            Vertex::new([[0.7890647, -0.0, 0.5272362], [0.5272362, -0.0, 0.7890647], [0.3252691, -0.196, 0.3252691]], None, None, None, None, None),
+            Vertex::new([[0.5272362, -0.0, 0.7890647], [0.1851407, -0.0, 0.9307652], [0.1760344, -0.196, 0.4249846]], None, None, None, None, None),
+            Vertex::new([[0.1851407, -0.0, 0.9307652], [-0.1851407, -0.0, 0.9307652], [0.0, -0.196, 0.46]], None, None, None, None, None),
+            Vertex::new([[-0.1851407, -0.0, 0.9307652], [-0.5272362, -0.0, 0.7890647], [-0.1760344, -0.196, 0.4249846]], None, None, None, None, None),
+            Vertex::new([[-0.5272362, -0.0, 0.7890647], [-0.7890647, -0.0, 0.5272362], [-0.3252691, -0.196, 0.3252691]], None, None, None, None, None),
+            Vertex::new([[-0.7890647, -0.0, 0.5272362], [-0.9307652, -0.0, 0.1851407], [-0.4249846, -0.196, 0.1760344]], None, None, None, None, None),
+            Vertex::new([[-0.9307652, -0.0, 0.1851407], [-0.9307652, -0.0, -0.1851407], [-0.46, -0.196, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.9307652, -0.0, -0.1851407], [-0.7890647, -0.0, -0.5272362], [-0.4249846, -0.196, -0.1760344]], None, None, None, None, None),
+            Vertex::new([[-0.7890647, -0.0, -0.5272362], [-0.5272362, -0.0, -0.7890647], [-0.3252691, -0.196, -0.3252691]], None, None, None, None, None),
+            Vertex::new([[-0.5272362, -0.0, -0.7890647], [-0.1851407, -0.0, -0.9307652], [-0.1760344, -0.196, -0.4249846]], None, None, None, None, None),
+            Vertex::new([[-0.1851407, -0.0, -0.9307652], [0.1851407, -0.0, -0.9307652], [-0.0, -0.196, -0.46]], None, None, None, None, None),
+            Vertex::new([[0.1851407, -0.0, -0.9307652], [0.5272362, -0.0, -0.7890647], [0.1760344, -0.196, -0.4249846]], None, None, None, None, None),
+            Vertex::new([[0.5272362, -0.0, -0.7890647], [0.7890647, -0.0, -0.5272362], [0.3252691, -0.196, -0.3252691]], None, None, None, None, None),
+            Vertex::new([[0.7890647, -0.0, -0.5272362], [0.9307652, -0.0, -0.1851407], [0.4249846, -0.196, -0.1760344]], None, None, None, None, None),
+            Vertex::new([[0.9307652, -0.0, -0.1851407], [0.9307652, -0.0, 0.1851407], [0.46, -0.196, 0.0]], None, None, None, None, None),
+            Vertex::new([[0.46, 0.196, 0.0], [0.4249846, 0.196, 0.1760344], [0.9307652, -0.0, 0.1851407]], None, None, None, None, None),
+            Vertex::new([[0.4249846, 0.196, 0.1760344], [0.3252691, 0.196, 0.3252691], [0.7890647, -0.0, 0.5272362]], None, None, None, None, None),
+            Vertex::new([[0.3252691, 0.196, 0.3252691], [0.1760344, 0.196, 0.4249846], [0.5272362, -0.0, 0.7890647]], None, None, None, None, None),
+            Vertex::new([[0.1760344, 0.196, 0.4249846], [0.0, 0.196, 0.46], [0.1851407, -0.0, 0.9307652]], None, None, None, None, None),
+            Vertex::new([[0.0, 0.196, 0.46], [-0.1760344, 0.196, 0.4249846], [-0.1851407, -0.0, 0.9307652]], None, None, None, None, None),
+            Vertex::new([[-0.1760344, 0.196, 0.4249846], [-0.3252691, 0.196, 0.3252691], [-0.5272362, -0.0, 0.7890647]], None, None, None, None, None),
+            Vertex::new([[-0.3252691, 0.196, 0.3252691], [-0.4249846, 0.196, 0.1760344], [-0.7890647, -0.0, 0.5272362]], None, None, None, None, None),
+            Vertex::new([[-0.4249846, 0.196, 0.1760344], [-0.46, 0.196, 0.0], [-0.9307652, -0.0, 0.1851407]], None, None, None, None, None),
+            Vertex::new([[-0.46, 0.196, 0.0], [-0.4249846, 0.196, -0.1760344], [-0.9307652, -0.0, -0.1851407]], None, None, None, None, None),
+            Vertex::new([[-0.4249846, 0.196, -0.1760344], [-0.3252691, 0.196, -0.3252691], [-0.7890647, -0.0, -0.5272362]], None, None, None, None, None),
+            Vertex::new([[-0.3252691, 0.196, -0.3252691], [-0.1760344, 0.196, -0.4249846], [-0.5272362, -0.0, -0.7890647]], None, None, None, None, None),
+            Vertex::new([[-0.1760344, 0.196, -0.4249846], [-0.0, 0.196, -0.46], [-0.1851407, -0.0, -0.9307652]], None, None, None, None, None),
+            Vertex::new([[-0.0, 0.196, -0.46], [0.1760344, 0.196, -0.4249846], [0.1851407, -0.0, -0.9307652]], None, None, None, None, None),
+            Vertex::new([[0.1760344, 0.196, -0.4249846], [0.3252691, 0.196, -0.3252691], [0.5272362, -0.0, -0.7890647]], None, None, None, None, None),
+            Vertex::new([[0.3252691, 0.196, -0.3252691], [0.4249846, 0.196, -0.1760344], [0.7890647, -0.0, -0.5272362]], None, None, None, None, None),
+            Vertex::new([[0.4249846, 0.196, -0.1760344], [0.46, 0.196, 0.0], [0.9307652, -0.0, -0.1851407]], None, None, None, None, None),
+            Vertex::new([[0.7890647, -0.0, 0.5272362], [0.9307652, -0.0, 0.1851407], [0.4249846, 0.196, 0.1760344]], None, None, None, None, None),
+            Vertex::new([[0.5272362, -0.0, 0.7890647], [0.7890647, -0.0, 0.5272362], [0.3252691, 0.196, 0.3252691]], None, None, None, None, None),
+            Vertex::new([[0.1851407, -0.0, 0.9307652], [0.5272362, -0.0, 0.7890647], [0.1760344, 0.196, 0.4249846]], None, None, None, None, None),
+            Vertex::new([[-0.1851407, -0.0, 0.9307652], [0.1851407, -0.0, 0.9307652], [0.0, 0.196, 0.46]], None, None, None, None, None),
+            Vertex::new([[-0.5272362, -0.0, 0.7890647], [-0.1851407, -0.0, 0.9307652], [-0.1760344, 0.196, 0.4249846]], None, None, None, None, None),
+            Vertex::new([[-0.7890647, -0.0, 0.5272362], [-0.5272362, -0.0, 0.7890647], [-0.3252691, 0.196, 0.3252691]], None, None, None, None, None),
+            Vertex::new([[-0.9307652, -0.0, 0.1851407], [-0.7890647, -0.0, 0.5272362], [-0.4249846, 0.196, 0.1760344]], None, None, None, None, None),
+            Vertex::new([[-0.9307652, -0.0, -0.1851407], [-0.9307652, -0.0, 0.1851407], [-0.46, 0.196, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.7890647, -0.0, -0.5272362], [-0.9307652, -0.0, -0.1851407], [-0.4249846, 0.196, -0.1760344]], None, None, None, None, None),
+            Vertex::new([[-0.5272362, -0.0, -0.7890647], [-0.7890647, -0.0, -0.5272362], [-0.3252691, 0.196, -0.3252691]], None, None, None, None, None),
+            Vertex::new([[-0.1851407, -0.0, -0.9307652], [-0.5272362, -0.0, -0.7890647], [-0.1760344, 0.196, -0.4249846]], None, None, None, None, None),
+            Vertex::new([[0.1851407, -0.0, -0.9307652], [-0.1851407, -0.0, -0.9307652], [-0.0, 0.196, -0.46]], None, None, None, None, None),
+            Vertex::new([[0.5272362, -0.0, -0.7890647], [0.1851407, -0.0, -0.9307652], [0.1760344, 0.196, -0.4249846]], None, None, None, None, None),
+            Vertex::new([[0.7890647, -0.0, -0.5272362], [0.5272362, -0.0, -0.7890647], [0.3252691, 0.196, -0.3252691]], None, None, None, None, None),
+            Vertex::new([[0.9307652, -0.0, -0.1851407], [0.7890647, -0.0, -0.5272362], [0.4249846, 0.196, -0.1760344]], None, None, None, None, None),
+            Vertex::new([[0.9307652, -0.0, 0.1851407], [0.9307652, -0.0, -0.1851407], [0.46, 0.196, 0.0]], None, None, None, None, None),
+            Vertex::new([[0.4249846, 0.196, 0.1760344], [0.46, 0.196, 0.0], [0.2942356, 0.4, 0.0585271]], None, None, None, None, None),
+            Vertex::new([[0.3252691, 0.196, 0.3252691], [0.4249846, 0.196, 0.1760344], [0.2494409, 0.4, 0.1666711]], None, None, None, None, None),
+            Vertex::new([[0.1760344, 0.196, 0.4249846], [0.3252691, 0.196, 0.3252691], [0.1666711, 0.4, 0.2494409]], None, None, None, None, None),
+            Vertex::new([[0.0, 0.196, 0.46], [0.1760344, 0.196, 0.4249846], [0.0585271, 0.4, 0.2942356]], None, None, None, None, None),
+            Vertex::new([[-0.1760344, 0.196, 0.4249846], [0.0, 0.196, 0.46], [-0.0585271, 0.4, 0.2942356]], None, None, None, None, None),
+            Vertex::new([[-0.3252691, 0.196, 0.3252691], [-0.1760344, 0.196, 0.4249846], [-0.1666711, 0.4, 0.2494409]], None, None, None, None, None),
+            Vertex::new([[-0.4249846, 0.196, 0.1760344], [-0.3252691, 0.196, 0.3252691], [-0.2494409, 0.4, 0.1666711]], None, None, None, None, None),
+            Vertex::new([[-0.46, 0.196, 0.0], [-0.4249846, 0.196, 0.1760344], [-0.2942356, 0.4, 0.0585271]], None, None, None, None, None),
+            Vertex::new([[-0.4249846, 0.196, -0.1760344], [-0.46, 0.196, 0.0], [-0.2942356, 0.4, -0.0585271]], None, None, None, None, None),
+            Vertex::new([[-0.3252691, 0.196, -0.3252691], [-0.4249846, 0.196, -0.1760344], [-0.2494409, 0.4, -0.1666711]], None, None, None, None, None),
+            Vertex::new([[-0.1760344, 0.196, -0.4249846], [-0.3252691, 0.196, -0.3252691], [-0.1666711, 0.4, -0.2494409]], None, None, None, None, None),
+            Vertex::new([[-0.0, 0.196, -0.46], [-0.1760344, 0.196, -0.4249846], [-0.0585271, 0.4, -0.2942356]], None, None, None, None, None),
+            Vertex::new([[0.1760344, 0.196, -0.4249846], [-0.0, 0.196, -0.46], [0.0585271, 0.4, -0.2942356]], None, None, None, None, None),
+            Vertex::new([[0.3252691, 0.196, -0.3252691], [0.1760344, 0.196, -0.4249846], [0.1666711, 0.4, -0.2494409]], None, None, None, None, None),
+            Vertex::new([[0.4249846, 0.196, -0.1760344], [0.3252691, 0.196, -0.3252691], [0.2494409, 0.4, -0.1666711]], None, None, None, None, None),
+            Vertex::new([[0.46, 0.196, 0.0], [0.4249846, 0.196, -0.1760344], [0.2942356, 0.4, -0.0585271]], None, None, None, None, None),
+            Vertex::new([[0.2942356, 0.4, 0.0585271], [0.2494409, 0.4, 0.1666711], [0.4249846, 0.196, 0.1760344]], None, None, None, None, None),
+            Vertex::new([[0.2494409, 0.4, 0.1666711], [0.1666711, 0.4, 0.2494409], [0.3252691, 0.196, 0.3252691]], None, None, None, None, None),
+            Vertex::new([[0.1666711, 0.4, 0.2494409], [0.0585271, 0.4, 0.2942356], [0.1760344, 0.196, 0.4249846]], None, None, None, None, None),
+            Vertex::new([[0.0585271, 0.4, 0.2942356], [-0.0585271, 0.4, 0.2942356], [0.0, 0.196, 0.46]], None, None, None, None, None),
+            Vertex::new([[-0.0585271, 0.4, 0.2942356], [-0.1666711, 0.4, 0.2494409], [-0.1760344, 0.196, 0.4249846]], None, None, None, None, None),
+            Vertex::new([[-0.1666711, 0.4, 0.2494409], [-0.2494409, 0.4, 0.1666711], [-0.3252691, 0.196, 0.3252691]], None, None, None, None, None),
+            Vertex::new([[-0.2494409, 0.4, 0.1666711], [-0.2942356, 0.4, 0.0585271], [-0.4249846, 0.196, 0.1760344]], None, None, None, None, None),
+            Vertex::new([[-0.2942356, 0.4, 0.0585271], [-0.2942356, 0.4, -0.0585271], [-0.46, 0.196, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.2942356, 0.4, -0.0585271], [-0.2494409, 0.4, -0.1666711], [-0.4249846, 0.196, -0.1760344]], None, None, None, None, None),
+            Vertex::new([[-0.2494409, 0.4, -0.1666711], [-0.1666711, 0.4, -0.2494409], [-0.3252691, 0.196, -0.3252691]], None, None, None, None, None),
+            Vertex::new([[-0.1666711, 0.4, -0.2494409], [-0.0585271, 0.4, -0.2942356], [-0.1760344, 0.196, -0.4249846]], None, None, None, None, None),
+            Vertex::new([[-0.0585271, 0.4, -0.2942356], [0.0585271, 0.4, -0.2942356], [-0.0, 0.196, -0.46]], None, None, None, None, None),
+            Vertex::new([[0.0585271, 0.4, -0.2942356], [0.1666711, 0.4, -0.2494409], [0.1760344, 0.196, -0.4249846]], None, None, None, None, None),
+            Vertex::new([[0.1666711, 0.4, -0.2494409], [0.2494409, 0.4, -0.1666711], [0.3252691, 0.196, -0.3252691]], None, None, None, None, None),
+            Vertex::new([[0.2494409, 0.4, -0.1666711], [0.2942356, 0.4, -0.0585271], [0.4249846, 0.196, -0.1760344]], None, None, None, None, None),
+            Vertex::new([[0.2942356, 0.4, -0.0585271], [0.2942356, 0.4, 0.0585271], [0.46, 0.196, 0.0]], None, None, None, None, None),
+            Vertex::new([[0.3292503, 0.23, 0.2739637], [0.3791081, 0.23, 0.1993463], [0.6004535, 0.502142, 0.4012102]], None, None, None, None, None),
+            Vertex::new([[0.3791081, 0.23, 0.1993463], [0.2913362, 0.332, 0.1946646], [0.6004535, 0.502142, 0.4012102]], None, None, None, None, None),
+            Vertex::new([[0.2913362, 0.332, 0.1946646], [0.3292503, 0.23, 0.2739637], [0.6004535, 0.502142, 0.4012102]], None, None, None, None, None),
+            Vertex::new([[-0.2739637, 0.23, 0.3292503], [-0.1993463, 0.23, 0.3791081], [-0.4012102, 0.502142, 0.6004535]], None, None, None, None, None),
+            Vertex::new([[-0.1993463, 0.23, 0.3791081], [-0.1946646, 0.332, 0.2913362], [-0.4012102, 0.502142, 0.6004535]], None, None, None, None, None),
+            Vertex::new([[-0.1946646, 0.332, 0.2913362], [-0.2739637, 0.23, 0.3292503], [-0.4012102, 0.502142, 0.6004535]], None, None, None, None, None),
+            Vertex::new([[-0.3292503, 0.23, -0.2739637], [-0.3791081, 0.23, -0.1993463], [-0.6004535, 0.502142, -0.4012102]], None, None, None, None, None),
+            Vertex::new([[-0.3791081, 0.23, -0.1993463], [-0.2913362, 0.332, -0.1946646], [-0.6004535, 0.502142, -0.4012102]], None, None, None, None, None),
+            Vertex::new([[-0.2913362, 0.332, -0.1946646], [-0.3292503, 0.23, -0.2739637], [-0.6004535, 0.502142, -0.4012102]], None, None, None, None, None),
+            Vertex::new([[0.2739637, 0.23, -0.3292503], [0.1993463, 0.23, -0.3791081], [0.4012102, 0.502142, -0.6004535]], None, None, None, None, None),
+            Vertex::new([[0.1993463, 0.23, -0.3791081], [0.1946646, 0.332, -0.2913362], [0.4012102, 0.502142, -0.6004535]], None, None, None, None, None),
+            Vertex::new([[0.1946646, 0.332, -0.2913362], [0.2739637, 0.23, -0.3292503], [0.4012102, 0.502142, -0.6004535]], None, None, None, None, None),
+            Vertex::new([[0.115, 0.486, 0.0], [0.1062461, 0.486, 0.0440086], [0.2942356, 0.4, 0.0585271]], None, None, None, None, None),
+            Vertex::new([[0.1062461, 0.486, 0.0440086], [0.0813173, 0.486, 0.0813173], [0.2494409, 0.4, 0.1666711]], None, None, None, None, None),
+            Vertex::new([[0.0813173, 0.486, 0.0813173], [0.0440086, 0.486, 0.1062461], [0.1666711, 0.4, 0.2494409]], None, None, None, None, None),
+            Vertex::new([[0.0440086, 0.486, 0.1062461], [0.0, 0.486, 0.115], [0.0585271, 0.4, 0.2942356]], None, None, None, None, None),
+            Vertex::new([[0.0, 0.486, 0.115], [-0.0440086, 0.486, 0.1062461], [-0.0585271, 0.4, 0.2942356]], None, None, None, None, None),
+            Vertex::new([[-0.0440086, 0.486, 0.1062461], [-0.0813173, 0.486, 0.0813173], [-0.1666711, 0.4, 0.2494409]], None, None, None, None, None),
+            Vertex::new([[-0.0813173, 0.486, 0.0813173], [-0.1062461, 0.486, 0.0440086], [-0.2494409, 0.4, 0.1666711]], None, None, None, None, None),
+            Vertex::new([[-0.1062461, 0.486, 0.0440086], [-0.115, 0.486, 0.0], [-0.2942356, 0.4, 0.0585271]], None, None, None, None, None),
+            Vertex::new([[-0.115, 0.486, 0.0], [-0.1062461, 0.486, -0.0440086], [-0.2942356, 0.4, -0.0585271]], None, None, None, None, None),
+            Vertex::new([[-0.1062461, 0.486, -0.0440086], [-0.0813173, 0.486, -0.0813173], [-0.2494409, 0.4, -0.1666711]], None, None, None, None, None),
+            Vertex::new([[-0.0813173, 0.486, -0.0813173], [-0.0440086, 0.486, -0.1062461], [-0.1666711, 0.4, -0.2494409]], None, None, None, None, None),
+            Vertex::new([[-0.0440086, 0.486, -0.1062461], [-0.0, 0.486, -0.115], [-0.0585271, 0.4, -0.2942356]], None, None, None, None, None),
+            Vertex::new([[-0.0, 0.486, -0.115], [0.0440086, 0.486, -0.1062461], [0.0585271, 0.4, -0.2942356]], None, None, None, None, None),
+            Vertex::new([[0.0440086, 0.486, -0.1062461], [0.0813173, 0.486, -0.0813173], [0.1666711, 0.4, -0.2494409]], None, None, None, None, None),
+            Vertex::new([[0.0813173, 0.486, -0.0813173], [0.1062461, 0.486, -0.0440086], [0.2494409, 0.4, -0.1666711]], None, None, None, None, None),
+            Vertex::new([[0.1062461, 0.486, -0.0440086], [0.115, 0.486, 0.0], [0.2942356, 0.4, -0.0585271]], None, None, None, None, None),
+            Vertex::new([[0.2494409, 0.4, 0.1666711], [0.2942356, 0.4, 0.0585271], [0.1062461, 0.486, 0.0440086]], None, None, None, None, None),
+            Vertex::new([[0.1666711, 0.4, 0.2494409], [0.2494409, 0.4, 0.1666711], [0.0813173, 0.486, 0.0813173]], None, None, None, None, None),
+            Vertex::new([[0.0585271, 0.4, 0.2942356], [0.1666711, 0.4, 0.2494409], [0.0440086, 0.486, 0.1062461]], None, None, None, None, None),
+            Vertex::new([[-0.0585271, 0.4, 0.2942356], [0.0585271, 0.4, 0.2942356], [0.0, 0.486, 0.115]], None, None, None, None, None),
+            Vertex::new([[-0.1666711, 0.4, 0.2494409], [-0.0585271, 0.4, 0.2942356], [-0.0440086, 0.486, 0.1062461]], None, None, None, None, None),
+            Vertex::new([[-0.2494409, 0.4, 0.1666711], [-0.1666711, 0.4, 0.2494409], [-0.0813173, 0.486, 0.0813173]], None, None, None, None, None),
+            Vertex::new([[-0.2942356, 0.4, 0.0585271], [-0.2494409, 0.4, 0.1666711], [-0.1062461, 0.486, 0.0440086]], None, None, None, None, None),
+            Vertex::new([[-0.2942356, 0.4, -0.0585271], [-0.2942356, 0.4, 0.0585271], [-0.115, 0.486, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.2494409, 0.4, -0.1666711], [-0.2942356, 0.4, -0.0585271], [-0.1062461, 0.486, -0.0440086]], None, None, None, None, None),
+            Vertex::new([[-0.1666711, 0.4, -0.2494409], [-0.2494409, 0.4, -0.1666711], [-0.0813173, 0.486, -0.0813173]], None, None, None, None, None),
+            Vertex::new([[-0.0585271, 0.4, -0.2942356], [-0.1666711, 0.4, -0.2494409], [-0.0440086, 0.486, -0.1062461]], None, None, None, None, None),
+            Vertex::new([[0.0585271, 0.4, -0.2942356], [-0.0585271, 0.4, -0.2942356], [-0.0, 0.486, -0.115]], None, None, None, None, None),
+            Vertex::new([[0.1666711, 0.4, -0.2494409], [0.0585271, 0.4, -0.2942356], [0.0440086, 0.486, -0.1062461]], None, None, None, None, None),
+            Vertex::new([[0.2494409, 0.4, -0.1666711], [0.1666711, 0.4, -0.2494409], [0.0813173, 0.486, -0.0813173]], None, None, None, None, None),
+            Vertex::new([[0.2942356, 0.4, -0.0585271], [0.2494409, 0.4, -0.1666711], [0.1062461, 0.486, -0.0440086]], None, None, None, None, None),
+            Vertex::new([[0.2942356, 0.4, 0.0585271], [0.2942356, 0.4, -0.0585271], [0.115, 0.486, 0.0]], None, None, None, None, None),
+            Vertex::new([[0.115, 0.486, 0.0], [0.1062461, 0.486, 0.0440086], [0.0, 0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[0.1062461, 0.486, 0.0440086], [0.0813173, 0.486, 0.0813173], [0.0, 0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[0.0813173, 0.486, 0.0813173], [0.0440086, 0.486, 0.1062461], [0.0, 0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[0.0440086, 0.486, 0.1062461], [0.0, 0.486, 0.115], [0.0, 0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[0.0, 0.486, 0.115], [-0.0440086, 0.486, 0.1062461], [0.0, 0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.0440086, 0.486, 0.1062461], [-0.0813173, 0.486, 0.0813173], [0.0, 0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.0813173, 0.486, 0.0813173], [-0.1062461, 0.486, 0.0440086], [0.0, 0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.1062461, 0.486, 0.0440086], [-0.115, 0.486, 0.0], [0.0, 0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.115, 0.486, 0.0], [-0.1062461, 0.486, -0.0440086], [0.0, 0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.1062461, 0.486, -0.0440086], [-0.0813173, 0.486, -0.0813173], [0.0, 0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.0813173, 0.486, -0.0813173], [-0.0440086, 0.486, -0.1062461], [0.0, 0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.0440086, 0.486, -0.1062461], [-0.0, 0.486, -0.115], [0.0, 0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[-0.0, 0.486, -0.115], [0.0440086, 0.486, -0.1062461], [0.0, 0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[0.0440086, 0.486, -0.1062461], [0.0813173, 0.486, -0.0813173], [0.0, 0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[0.0813173, 0.486, -0.0813173], [0.1062461, 0.486, -0.0440086], [0.0, 0.5, 0.0]], None, None, None, None, None),
+            Vertex::new([[0.1062461, 0.486, -0.0440086], [0.115, 0.486, 0.0], [0.0, 0.5, 0.0]], None, None, None, None, None),
         ]);
     figure1.move_matrix[[3, 2]] += 4.0;
     figure1._changed.move_matrix = true;
@@ -1058,7 +1091,12 @@ fn main() {
                     Err(e) => panic!("Failed to recreate swapchain: {:?}", e),
                 };
                 swapchain = new_swapchain;
-                let new_framebuffers = get_framebuffers(&new_images, render_pass.clone());
+                let new_framebuffers = get_framebuffers(
+                    &new_images,
+                    render_pass.clone(),
+                    device.clone(),
+                    surface.window().inner_size(),
+                );
 
                 if window_resized {
                     window_resized = false;
@@ -1206,20 +1244,19 @@ fn main() {
             //     recreate_swapchain = true;
             //     window_resized = true;
             // }
-                // vertex_buffer = CpuAccessibleBuffer::from_iter(
-                //     device.clone(),
-                //     BufferUsage::vertex_buffer(),
-                //     false,
-                //     figure1.get_vertex(surface.window().inner_size()).into_iter(),
-                // )
-                //     .unwrap();
-
+            // vertex_buffer = CpuAccessibleBuffer::from_iter(
+            //     device.clone(),
+            //     BufferUsage::vertex_buffer(),
+            //     false,
+            //     figure1.get_vertex(surface.window().inner_size()).into_iter(),
+            // )
+            //     .unwrap();
         }
         WinitEvent::WindowEvent {
             event: WindowEvent::KeyboardInput {
                 input: KeyboardInput {
                     scancode,
-                    virtual_keycode:Some(v_code),
+                    virtual_keycode: Some(v_code),
                     state: ElementState::Pressed,
                     ..
                 },
@@ -1251,7 +1288,7 @@ fn main() {
                             figure1._changed.projection_flag = true;
                             changes = true;
                             no_projections = false;
-                            break
+                            break;
                         }
                     }
                     _ => {}
@@ -1272,7 +1309,7 @@ fn main() {
             event: WindowEvent::KeyboardInput {
                 input: KeyboardInput {
                     scancode,
-                    virtual_keycode:Some(v_code),
+                    virtual_keycode: Some(v_code),
                     state: ElementState::Released,
                     ..
                 },
@@ -1293,7 +1330,7 @@ fn main() {
                             figure1._changed.projection_flag = true;
                             changes = true;
                             no_projections = false;
-                            break
+                            break;
                         }
                     }
                     _ => {}
