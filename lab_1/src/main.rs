@@ -151,97 +151,15 @@ impl Figure {
 mod vs {
     vulkano_shaders::shader! {
         ty: "vertex",
-        src: "
-#version 450
-
-vec3 colors[3] = vec3[](
-    vec3(1.0, 0.0, 0.0),
-    vec3(0.0, 1.0, 0.0),
-    vec3(0.0, 0.0, 1.0)
-);
-layout (constant_id = 0) const int WIGHT = 64;
-layout (constant_id = 1) const int HEIGHT = 64;
-
-layout(location = 0) in vec2[3] position;
-layout(location = 3) in vec3[3] move_matrix;
-layout(location = 6) in float[3] contour;
-layout(location = 9) in vec4[3] contour_colors;
-layout(location = 12) in vec4[3] point_colors;
-
-layout(location = 15) out vec4 fragColor;
-layout(location = 16) out vec3 contour_size;
-
-layout(location = 19) out float points[3][2] ;
-layout(location = 25) out vec4[3] contour_colors_fr;
-
-
-
-
-void main() {
-    float c_x = position[gl_VertexIndex % 3].x;
-    float c_y = position[gl_VertexIndex % 3].y;
-
-    points[ 0 ][0] = ((position[0].x + 1) / 2) * WIGHT ;
-    points[ 0 ][1] = ((1 * position[0].y + 1) / 2) * HEIGHT;
-    points[ 1 ][0] = ((position[1].x + 1) / 2) * WIGHT ;
-    points[ 1 ][1] = ((1 * position[1].y + 1) / 2) * HEIGHT;
-    points[ 2 ][0] = ((position[2].x + 1) / 2) * WIGHT ;
-    points[ 2 ][1] = ((1 * position[2].y + 1) / 2) * HEIGHT;
-
-    gl_Position = vec4(c_x, c_y, 0.0, 1.0);
-    contour_size = vec3(contour[0], contour[1], contour[2]);
-    contour_colors_fr = contour_colors;
-
-    fragColor = point_colors[ gl_VertexIndex % 3 ];
-
-}"
+        path: "src/vertex.glsl",
     }
 }
 
 mod fs {
     vulkano_shaders::shader! {
         ty: "fragment",
-        // language=GLSL
-        src: "
-// language=GLSL
-#version 450
-layout (constant_id = 0) const int WIGHT = 64;
-layout (constant_id = 1) const int HEIGHT = 64;
-
-layout(location = 0) out vec4 f_color;
-layout(location = 15) in vec4 fragColor;
-layout(location = 16) in vec3 contour_size;
-
-layout(location = 19) in float points[3][2];
-layout(location = 25) in vec4[3] contour_colors_fr;
-
-
-void main() {
-    float A1 = points[0][1] - points[1][1];
-    float B1 = points[1][0] - points[0][0];
-    float C1 = points[0][0] * points[1][1] - points[1][0] * points[0][1];
-
-    float A2 = points[1][1] - points[2][1];
-    float B2 = points[2][0] - points[1][0];
-    float C2 = points[1][0] * points[2][1] - points[2][0] * points[1][1];
-
-    float A3 = points[2][1] - points[0][1];
-    float B3 = points[0][0] - points[2][0];
-    float C3 = points[2][0] * points[0][1] - points[0][0] * points[2][1];
-
-    if (abs( A1 * gl_FragCoord.x   + B1 * gl_FragCoord.y + C1) / sqrt(A1*A1 + B1*B1) < contour_size.x )
-        f_color = contour_colors_fr[0];
-
-    else if (abs( A2 * gl_FragCoord.x   + B2 * gl_FragCoord.y + C2) / sqrt(A2*A2 + B2*B2) < contour_size.y)
-        f_color = contour_colors_fr[1];
-
-    else if (abs( A3 * gl_FragCoord.x   + B3 * gl_FragCoord.y + C3) / sqrt(A3*A3 + B3*B3) < contour_size.z)
-        f_color = contour_colors_fr[2];
-
-    else
-        f_color = fragColor;
-
-}"
+        path: "src/fragments.glsl",
+        // src: ""
     }
 }
 
