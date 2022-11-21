@@ -985,72 +985,25 @@ fn main() {
             event: WindowEvent::ReceivedCharacter(code),
             ..
         } => {
-            // NdIndex.
-            // https://docs.rs/winit/latest/winit/event/enum.WindowEvent.html#variant.ReceivedCharacter
-            // println!("+ {:},", code);
-            // let mut changes = true;
-            // let mn: f32 = 0.05;
-            // println!("{:}", figure1.move_matrix);
-            // match event {
-            //     WinitEvent::WindowEvent {
-            //         event: WindowEvent::ReceivedCharacter('a'),
-            //         ..
-            //     } => {
-            //         // let mut z = figure1.move_matrix.slice(s![.., 2]);
-            //         // z += 1;
-            //         figure1.move_matrix[[3, 0]] -= mn;
-            //         figure1._changed.move_matrix = true;
-            //     }
-            //     WinitEvent::WindowEvent {
-            //         event: WindowEvent::ReceivedCharacter('d'),
-            //         ..
-            //     } => {
-            //         figure1.move_matrix[[3, 0]] += mn;
-            //         figure1._changed.move_matrix = true;
-            //     }
-            //     WinitEvent::WindowEvent {
-            //         event: WindowEvent::ReceivedCharacter('w'),
-            //         ..
-            //     } => {
-            //         figure1.move_matrix[[3, 1]] -= mn;
-            //         figure1._changed.move_matrix = true;
-            //     }
-            //     WinitEvent::WindowEvent {
-            //         event: WindowEvent::ReceivedCharacter('s'),
-            //         ..
-            //     } => {
-            //         figure1.move_matrix[[3, 1]] += mn;
-            //         figure1._changed.move_matrix = true;
-            //     }
-            //     WinitEvent::WindowEvent {
-            //         event: WindowEvent::ReceivedCharacter('z'),
-            //         ..
-            //     } => {
-            //         figure1.move_matrix[[3, 2]] -= mn;
-            //         figure1._changed.move_matrix = true;
-            //     }
-            //     WinitEvent::WindowEvent {
-            //         event: WindowEvent::ReceivedCharacter('x'),
-            //         ..
-            //     } => {
-            //         figure1.move_matrix[[3, 2]] += mn;
-            //         figure1._changed.move_matrix = true;
-            //     }
-            //     _ => {
-            //         changes = false;
-            //     }
-            // }
-            // if changes {
-            //     recreate_swapchain = true;
-            //     window_resized = true;
-            // }
-            // vertex_buffer = CpuAccessibleBuffer::from_iter(
-            //     device.clone(),
-            //     BufferUsage::vertex_buffer(),
-            //     false,
-            //     figure1.get_vertex(surface.window().inner_size()).into_iter(),
-            // )
-            //     .unwrap();
+
+        }
+        Event::RedrawEventsCleared => {
+            let mn = 0.01;
+            let mut changes = false;
+            for (keycode, (i, j, sign)) in &move_rules {
+                match keyboard_pressed.get(keycode) {
+                    Some(true) => {
+                        figure1.move_matrix[[i.clone(), j.clone()]] += mn * sign.clone() as f32;
+                        figure1._changed.move_matrix = true;
+                        changes = true;
+                    }
+                    _ => {}
+                }
+            }
+            if changes {
+                recreate_swapchain = true;
+                window_resized = true;
+            }
         }
         WinitEvent::WindowEvent {
             event: WindowEvent::KeyboardInput {
@@ -1066,18 +1019,8 @@ fn main() {
         } => {
             println!("Keycode {:} or {:?} Pressed ", scancode, v_code);
             keyboard_pressed.insert(v_code, true);
-            let mn = 0.01;
             let mut changes = false;
-            for (keycode, (i, j, sign)) in &move_rules {
-                match keyboard_pressed.get(keycode) {
-                    Some(true) => {
-                        figure1.move_matrix[[i.clone(), j.clone()]] += mn * sign.clone() as f32;
-                        figure1._changed.move_matrix = true;
-                        changes = true;
-                    }
-                    _ => {}
-                }
-            }
+
             println!("{}", figure1.move_matrix);
             let mut no_projections = true;
             for (keycode, projection_code) in &projection_rules {
@@ -1274,32 +1217,7 @@ fn main() {
                 }
             }
         }
-        // WinitEvent::WindowEvent {
-        //     event: WindowEvent::Re, ..
-        // } => {
-        //     let mn = 0.1;
-        //     let mut changes = false;
-        //     for (keycode, (i, j, sign)) in &move_rules {
-        //         match keyboard_pressed.get(keycode) {
-        //             Some(true) => {
-        //                 figure1.move_matrix[[i, j]] += mn * sign;
-        //                 figure1._changed.move_matrix = true;
-        //                 changes = true;
-        //             }
-        //             _ => {}
-        //         }
-        //     }
-        //
-        //     if changes {
-        //         recreate_swapchain = true;
-        //         window_resized = true;
-        //     }
-        // }
-        // WinitEvent::WindowEvent {
-        //     event: WindowEvent::CursorMoved { modifiers: winit::ModifiersState{}, ..}, ..
-        // } => {
-        //
-        // }
+
         _ => (),
     });
 }
