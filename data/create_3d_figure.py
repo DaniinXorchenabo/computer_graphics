@@ -44,20 +44,20 @@ z = 0.4
 radius = 0.3
 level2 = [(math.cos(i) * radius, math.sin(i) * radius, z) for i in
           [((i * (360 / 16)) + 360 / 32) * math.pi / 180 for i in range(0, 16)]]
-triangles += [(level1[(i + 0) % 16], level1[(i + 1) % 16], level2[(i) % 16]) for i in range(16)]
+triangles += [(level1[(i + 1) % 16], level1[(i + 0) % 16],  level2[(i) % 16]) for i in range(16)]
 triangles += [(level2[i % 16], level2[(i + 1) % 16], level1[(i + 1) % 16]) for i in range(16)]
 z = 0.196
 radius = 0.46
 level3 = [(math.cos(i) * radius, math.sin(i) * radius, z) for i in
           [i * (360 / 16) * math.pi / 180 for i in range(0, 16)]]
 triangles += [(level3[i % 16], level3[(i + 1) % 16], level2[i % 16]) for i in range(16)]
-triangles += [(level2[i % 16], level2[(i + 1) % 16], level3[(i + 1) % 16]) for i in range(16)]
+triangles += [( level2[(i + 1) % 16], level2[i % 16], level3[(i + 1) % 16]) for i in range(16)]
 
 z = 0.0
 radius = 0.949
 level4 = [(math.cos(i) * radius, math.sin(i) * radius, z) for i in
           [((i * (360 / 16)) + 360 / 32) * math.pi / 180 for i in range(0, 16)]]
-triangles += [(level3[(i + 0) % 16], level3[(i + 1) % 16], level4[(i) % 16]) for i in range(16)]
+triangles += [(level3[(i + 1) % 16], level3[(i + 0) % 16],  level4[(i) % 16]) for i in range(16)]
 triangles += [(level4[i % 16], level4[(i + 1) % 16], level3[(i + 1) % 16]) for i in range(16)]
 
 z = -0.196
@@ -65,13 +65,13 @@ radius = 0.46
 level5 = [(math.cos(i) * radius, math.sin(i) * radius, z) for i in
           [i * (360 / 16) * math.pi / 180 for i in range(0, 16)]]
 triangles += [(level5[i % 16], level5[(i + 1) % 16], level4[i % 16]) for i in range(16)]
-triangles += [(level4[i % 16], level4[(i + 1) % 16], level5[(i + 1) % 16]) for i in range(16)]
+triangles += [( level4[(i + 1) % 16], level4[i % 16], level5[(i + 1) % 16]) for i in range(16)]
 
 z = -0.4
 radius = 0.3
 level6 = [(math.cos(i) * radius, math.sin(i) * radius, z) for i in
           [((i * (360 / 16)) + 360 / 32) * math.pi / 180 for i in range(0, 16)]]
-tr_6 = [(level5[(i + 0) % 16], level5[(i + 1) % 16], level6[(i) % 16]) for i in range(16)]
+tr_6 = [(level5[(i + 1) % 16], level5[(i + 0) % 16],  level6[(i) % 16]) for i in range(16)]
 triangles += tr_6
 triangles += [(level6[i % 16], level6[(i + 1) % 16], level5[(i + 1) % 16]) for i in range(16)]
 
@@ -93,7 +93,7 @@ z = -0.486
 level7 = [(math.cos(i) * radius, math.sin(i) * radius, z) for i in
           [i * (360 / 16) * math.pi / 180 for i in range(0, 16)]]
 triangles += [(level7[i % 16], level7[(i + 1) % 16], level6[i % 16]) for i in range(16)]
-triangles += [(level6[i % 16], level6[(i + 1) % 16], level7[(i + 1) % 16]) for i in range(16)]
+triangles += [(level6[(i + 1) % 16], level6[i % 16],  level7[(i + 1) % 16]) for i in range(16)]
 center = (0.0, 0.0, -0.5)
 triangles += [(level7[i % 16], level7[(i + 1) % 16], center) for i in range(16)]
 
