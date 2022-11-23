@@ -151,14 +151,14 @@ impl Figure {
 mod vs {
     vulkano_shaders::shader! {
         ty: "vertex",
-        path: "src/vertex.glsl",
+        path: "src/bin/lab_1/vertex.glsl",
     }
 }
 
 mod fs {
     vulkano_shaders::shader! {
         ty: "fragment",
-        path: "src/fragments.glsl",
+        path: "src/bin/lab_1/fragments.glsl",
         // src: ""
     }
 }
@@ -407,6 +407,7 @@ fn main() {
         figure1.get_vertex().into_iter(),
     )
         .unwrap();
+
 
 
     // let vertex1 = Vertex::new(
