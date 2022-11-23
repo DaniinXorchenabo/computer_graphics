@@ -308,14 +308,14 @@ impl Figure {
 mod vs {
     vulkano_shaders::shader! {
         ty: "vertex",
-        path: "src/vertex.glsl",
+        path: "src/bin/lab_6/vertex.glsl",
     }
 }
 
 mod fs {
     vulkano_shaders::shader! {
         ty: "fragment",
-        path: "src/fragments.glsl",
+        path: "src/bin/lab_6/fragments.glsl",
         // src: ""
     }
 }
