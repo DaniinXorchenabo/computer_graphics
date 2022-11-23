@@ -981,6 +981,24 @@ fn main() {
 
             previous_fence_i = image_i;
         }
+        Event::RedrawEventsCleared => {
+            let mn = 0.01;
+            let mut changes = false;
+            for (keycode, (i, j, sign)) in &move_rules {
+                match keyboard_pressed.get(keycode) {
+                    Some(true) => {
+                        figure1.move_matrix[[i.clone(), j.clone()]] += mn * sign.clone() as f32;
+                        figure1._changed.move_matrix = true;
+                        changes = true;
+                    }
+                    _ => {}
+                }
+            }
+            if changes {
+                recreate_swapchain = true;
+                window_resized = true;
+            }
+        }
         WinitEvent::WindowEvent {
             event: WindowEvent::ReceivedCharacter(code),
             ..
@@ -1068,16 +1086,16 @@ fn main() {
             keyboard_pressed.insert(v_code, true);
             let mn = 0.01;
             let mut changes = false;
-            for (keycode, (i, j, sign)) in &move_rules {
-                match keyboard_pressed.get(keycode) {
-                    Some(true) => {
-                        figure1.move_matrix[[i.clone(), j.clone()]] += mn * sign.clone() as f32;
-                        figure1._changed.move_matrix = true;
-                        changes = true;
-                    }
-                    _ => {}
-                }
-            }
+            // for (keycode, (i, j, sign)) in &move_rules {
+            //     match keyboard_pressed.get(keycode) {
+            //         Some(true) => {
+            //             figure1.move_matrix[[i.clone(), j.clone()]] += mn * sign.clone() as f32;
+            //             figure1._changed.move_matrix = true;
+            //             changes = true;
+            //         }
+            //         _ => {}
+            //     }
+            // }
             println!("{}", figure1.move_matrix);
             let mut no_projections = true;
             for (keycode, projection_code) in &projection_rules {
