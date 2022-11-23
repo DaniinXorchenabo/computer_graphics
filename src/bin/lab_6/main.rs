@@ -48,7 +48,6 @@ use winit::window::{Window, WindowBuilder};
 use vulkano::shader::SpecializationConstants;
 use vulkano::shader::SpecializationMapEntry;
 use std::collections::HashMap;
-use std::time::Instant;
 // use image::error::UnsupportedErrorKind::Format;
 // extern crate ndarray;
 use vulkano::{format::Format};
@@ -797,11 +796,7 @@ fn main() {
 
         ]);
     figure1.move_matrix[[3, 2]] += 4.0;
-    figure1.scale[0] /= 1.0 + 20.0 / 10.0;
-    figure1.scale[1] /= 1.0 + 20.0 / 10.0;
-    figure1.scale[2] /= 1.0 + 20.0 / 10.0;
     figure1._changed.move_matrix = true;
-    figure1._changed.scale = true;
 
     let mut vertex_buffer = CpuAccessibleBuffer::from_iter(
         device.clone(),
@@ -865,13 +860,6 @@ fn main() {
     let projection_rules: HashMap<VirtualKeyCode, i32> = HashMap::from([
         (VirtualKeyCode::Key1, 1),
     ]);
-    let mut speed = 0.0f32;
-    let mut last_rotation = 0.0f64;
-    let mut target_point = (1.0, 1.0, 1.0);
-    let mut speed_mn = 1.0;
-    let mut change_mn = false;
-    let rotation_start = Instant::now();
-
 
 
     event_loop.run(move |event, _, control_flow| match event {
@@ -993,12 +981,6 @@ fn main() {
 
             previous_fence_i = image_i;
         }
-        WinitEvent::WindowEvent {
-            event: WindowEvent::ReceivedCharacter(code),
-            ..
-        } => {
-
-        }
         Event::RedrawEventsCleared => {
             let mn = 0.01;
             let mut changes = false;
@@ -1012,32 +994,81 @@ fn main() {
                     _ => {}
                 }
             }
-            let elapsed = rotation_start.elapsed();
-            let rotation = elapsed.as_secs() as f64 + elapsed.subsec_nanos() as f64 / 1_000_000_000.0;
-            let module_: f64 = 7.0;
-            if rotation % module_ < 2f64 {
-                change_mn = false;
-                speed += (rotation  % module_).tanh() as f32;
-            }
-            else if rotation % module_ > (module_ - 1.0) {
-                if  !change_mn {
-                    change_mn = true;
-                    speed_mn *= -1.0;
-                    speed = 0.0;
-                }
-            }
-            else if rotation % module_ > (module_ - 3.0){
-                speed -= (rotation % module_ - (module_ - 3.0)).tanh() as f32;
-            }
-            figure1.move_matrix[[3, 0]] += speed * 0.01 * (rotation - last_rotation) as f32 * speed_mn;
-            figure1._changed.move_matrix = true;
-            changes = true;
-            last_rotation = rotation;
-            println!("{}", rotation);
             if changes {
                 recreate_swapchain = true;
                 window_resized = true;
             }
+        }
+        WinitEvent::WindowEvent {
+            event: WindowEvent::ReceivedCharacter(code),
+            ..
+        } => {
+            // NdIndex.
+            // https://docs.rs/winit/latest/winit/event/enum.WindowEvent.html#variant.ReceivedCharacter
+            // println!("+ {:},", code);
+            // let mut changes = true;
+            // let mn: f32 = 0.05;
+            // println!("{:}", figure1.move_matrix);
+            // match event {
+            //     WinitEvent::WindowEvent {
+            //         event: WindowEvent::ReceivedCharacter('a'),
+            //         ..
+            //     } => {
+            //         // let mut z = figure1.move_matrix.slice(s![.., 2]);
+            //         // z += 1;
+            //         figure1.move_matrix[[3, 0]] -= mn;
+            //         figure1._changed.move_matrix = true;
+            //     }
+            //     WinitEvent::WindowEvent {
+            //         event: WindowEvent::ReceivedCharacter('d'),
+            //         ..
+            //     } => {
+            //         figure1.move_matrix[[3, 0]] += mn;
+            //         figure1._changed.move_matrix = true;
+            //     }
+            //     WinitEvent::WindowEvent {
+            //         event: WindowEvent::ReceivedCharacter('w'),
+            //         ..
+            //     } => {
+            //         figure1.move_matrix[[3, 1]] -= mn;
+            //         figure1._changed.move_matrix = true;
+            //     }
+            //     WinitEvent::WindowEvent {
+            //         event: WindowEvent::ReceivedCharacter('s'),
+            //         ..
+            //     } => {
+            //         figure1.move_matrix[[3, 1]] += mn;
+            //         figure1._changed.move_matrix = true;
+            //     }
+            //     WinitEvent::WindowEvent {
+            //         event: WindowEvent::ReceivedCharacter('z'),
+            //         ..
+            //     } => {
+            //         figure1.move_matrix[[3, 2]] -= mn;
+            //         figure1._changed.move_matrix = true;
+            //     }
+            //     WinitEvent::WindowEvent {
+            //         event: WindowEvent::ReceivedCharacter('x'),
+            //         ..
+            //     } => {
+            //         figure1.move_matrix[[3, 2]] += mn;
+            //         figure1._changed.move_matrix = true;
+            //     }
+            //     _ => {
+            //         changes = false;
+            //     }
+            // }
+            // if changes {
+            //     recreate_swapchain = true;
+            //     window_resized = true;
+            // }
+            // vertex_buffer = CpuAccessibleBuffer::from_iter(
+            //     device.clone(),
+            //     BufferUsage::vertex_buffer(),
+            //     false,
+            //     figure1.get_vertex(surface.window().inner_size()).into_iter(),
+            // )
+            //     .unwrap();
         }
         WinitEvent::WindowEvent {
             event: WindowEvent::KeyboardInput {
@@ -1053,8 +1084,18 @@ fn main() {
         } => {
             println!("Keycode {:} or {:?} Pressed ", scancode, v_code);
             keyboard_pressed.insert(v_code, true);
+            let mn = 0.01;
             let mut changes = false;
-
+            // for (keycode, (i, j, sign)) in &move_rules {
+            //     match keyboard_pressed.get(keycode) {
+            //         Some(true) => {
+            //             figure1.move_matrix[[i.clone(), j.clone()]] += mn * sign.clone() as f32;
+            //             figure1._changed.move_matrix = true;
+            //             changes = true;
+            //         }
+            //         _ => {}
+            //     }
+            // }
             println!("{}", figure1.move_matrix);
             let mut no_projections = true;
             for (keycode, projection_code) in &projection_rules {
@@ -1071,7 +1112,6 @@ fn main() {
                     _ => {}
                 }
             }
-
             // if no_projections &&  figure1.projection_mode != 0{
             //     figure1.projection_mode = 0;
             //     figure1._changed.projection_flag = true;
@@ -1252,7 +1292,32 @@ fn main() {
                 }
             }
         }
-
+        // WinitEvent::WindowEvent {
+        //     event: WindowEvent::Re, ..
+        // } => {
+        //     let mn = 0.1;
+        //     let mut changes = false;
+        //     for (keycode, (i, j, sign)) in &move_rules {
+        //         match keyboard_pressed.get(keycode) {
+        //             Some(true) => {
+        //                 figure1.move_matrix[[i, j]] += mn * sign;
+        //                 figure1._changed.move_matrix = true;
+        //                 changes = true;
+        //             }
+        //             _ => {}
+        //         }
+        //     }
+        //
+        //     if changes {
+        //         recreate_swapchain = true;
+        //         window_resized = true;
+        //     }
+        // }
+        // WinitEvent::WindowEvent {
+        //     event: WindowEvent::CursorMoved { modifiers: winit::ModifiersState{}, ..}, ..
+        // } => {
+        //
+        // }
         _ => (),
     });
 }
