@@ -40,8 +40,8 @@ void main() {
         // gl_FragDepth = -1000.;
     }
     else {
-        vec3 sun_point =  vec3(6.8, 10.7, 20.);
-        vec3 cam_pos = vec3(10000., 10000., 1000000.);
+        vec3 sun_point =  vec3(6.8, -10.7, 1.);
+        vec3 cam_pos = vec3(0., 0., 0.1);
 
         float light_distanse =  plane_params.x   * sun_point.x
                                 + plane_params.y * sun_point.y
@@ -51,19 +51,23 @@ void main() {
                                 + plane_params.y * cam_pos.y
                                 + plane_params.z * cam_pos.z
                                 + plane_params.w;
-
+        float mn;
         if (light_distanse * cam_distanse <= 0) {
-            f_color = vec4(0., 0., 0., 1.) ;
+            mn = 0.05;
         } else {
-            vec3 to_cam = sun_point - points[3].xyz;
-            float mn = abs(plane_params.x * to_cam.x + plane_params.y * to_cam.y +plane_params.z * to_cam.z ) / length(plane_params.xyz) / length(to_cam);
-            f_color = vec4(fragColor.xyz * mn, fragColor.a) ;//* abs(plane_params.x * to_cam.x + plane_params.y * to_cam.y +plane_params.z * to_cam.z ) / length(plane_params.xyz) / length(to_cam) ;
+            vec3 to_sun = sun_point - points[3].xyz;
+            mn = abs(plane_params.x * to_sun.x + plane_params.y * to_sun.y +plane_params.z * to_sun.z) / length(plane_params.xyz) / length(to_sun);
+            vec3 reflect_vec = reflect(points[3].xyz - sun_point, plane_params.xyz);
+            mn = mn * max(-1 / ( pow(dot(normalize(reflect_vec), normalize(vec3(0., 0., 0.) - points[3].xyz)), 6) - 1) * 1., 1.);
+            mn = max(mn, 0.05);
+        }
+        f_color = vec4(fragColor.xyz * mn, fragColor.a) ;//* abs(plane_params.x * to_cam.x + plane_params.y * to_cam.y +plane_params.z * to_cam.z ) / length(plane_params.xyz) / length(to_cam) ;
 //            f_color = vec4(plane_params.xyz / length(plane_params.xyz), 1.) ;
 
 
             //            f_color = vec4(points[3].xyz / length(points[3].xyz ), 1.);
             //            f_color = fragColor;
-        }
+
         //        f_color = vec4(1., 1., 1., 1.);
         // float len = length(gl_FragCoord.xyz);
         // f_color = vec4(0., 0., (atan(points[0][2] * 1) * 2 / radians(180)), 0.5);
