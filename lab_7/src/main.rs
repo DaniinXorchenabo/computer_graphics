@@ -48,6 +48,7 @@ use winit::window::{Window, WindowBuilder};
 use vulkano::shader::SpecializationConstants;
 use vulkano::shader::SpecializationMapEntry;
 use std::collections::HashMap;
+use std::time::Instant;
 // use image::error::UnsupportedErrorKind::Format;
 // extern crate ndarray;
 use vulkano::{format::Format};
@@ -796,7 +797,11 @@ fn main() {
 
         ]);
     figure1.move_matrix[[3, 2]] += 4.0;
+    figure1.scale[0] /= 1.0 + 20.0 / 10.0;
+    figure1.scale[1] /= 1.0 + 20.0 / 10.0;
+    figure1.scale[2] /= 1.0 + 20.0 / 10.0;
     figure1._changed.move_matrix = true;
+    figure1._changed.scale = true;
 
     let mut vertex_buffer = CpuAccessibleBuffer::from_iter(
         device.clone(),
@@ -860,6 +865,13 @@ fn main() {
     let projection_rules: HashMap<VirtualKeyCode, i32> = HashMap::from([
         (VirtualKeyCode::Key1, 1),
     ]);
+    let mut speed = 0.0f32;
+    let mut last_rotation = 0.0f64;
+    let mut target_point = (1.0, 1.0, 1.0);
+    let mut speed_mn = 1.0;
+    let mut change_mn = false;
+    let rotation_start = Instant::now();
+
 
 
     event_loop.run(move |event, _, control_flow| match event {
@@ -1000,6 +1012,28 @@ fn main() {
                     _ => {}
                 }
             }
+            let elapsed = rotation_start.elapsed();
+            let rotation = elapsed.as_secs() as f64 + elapsed.subsec_nanos() as f64 / 1_000_000_000.0;
+            let module_: f64 = 7.0;
+            if rotation % module_ < 2f64 {
+                change_mn = false;
+                speed += (rotation  % module_).tanh() as f32;
+            }
+            else if rotation % module_ > (module_ - 1.0) {
+                if  !change_mn {
+                    change_mn = true;
+                    speed_mn *= -1.0;
+                    speed = 0.0;
+                }
+            }
+            else if rotation % module_ > (module_ - 3.0){
+                speed -= (rotation % module_ - (module_ - 3.0)).tanh() as f32;
+            }
+            figure1.move_matrix[[3, 0]] += speed * 0.01 * (rotation - last_rotation) as f32 * speed_mn;
+            figure1._changed.move_matrix = true;
+            changes = true;
+            last_rotation = rotation;
+            println!("{}", rotation);
             if changes {
                 recreate_swapchain = true;
                 window_resized = true;
@@ -1037,6 +1071,7 @@ fn main() {
                     _ => {}
                 }
             }
+
             // if no_projections &&  figure1.projection_mode != 0{
             //     figure1.projection_mode = 0;
             //     figure1._changed.projection_flag = true;
