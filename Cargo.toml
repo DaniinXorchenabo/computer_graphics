@@ -7,10 +7,18 @@ edition = "2021"
 
 [dependencies]
 vulkano = "0.30.0"
-bytemuck = "1.8.0"
+#bytemuck = "1.8.0"
 vulkano-shaders = "0.30.0"
 shaderc-sys = "0.8.0"
 image = "0.24"
 vulkano-win = "0.30.0"
 winit = "0.26"
 ndarray  = { version = "0.15.6", default-features = false }
+bytemuck = { version = "1.7", features = ["derive", "extern_crate_std", "min_const_generics"] }
+cgmath = "0.18"
+png = "0.17"
+serde = { version = "1.0", features = ["derive"] }
+ron = "0.7"
+rand = "0.8.4"
+
+glium = { git = "https://github.com/glium/glium.git", rev = "60889a2" }

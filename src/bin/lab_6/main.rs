@@ -20,14 +20,11 @@ use std::sync::Arc;
 
 use bytemuck::{Pod, Zeroable};
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, TypedBufferAccess};
-use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo,
-    SubpassContents,
-};
+use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferExecFuture, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassContents};
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType, QueueFamily};
 use vulkano::device::{Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo};
 use vulkano::image::view::ImageView;
-use vulkano::image::{AttachmentImage, ImageAccess, ImageUsage, SwapchainImage};
+use vulkano::image::{AttachmentImage, ImageAccess, ImageDimensions, ImageUsage, ImmutableImage, MipmapsCount, SwapchainImage};
 use vulkano::instance::{Instance, InstanceCreateInfo};
 use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
 use vulkano::pipeline::graphics::vertex_input::BuffersDefinition;
@@ -38,7 +35,7 @@ use vulkano::shader::ShaderModule;
 use vulkano::swapchain::{
     self, AcquireError, Surface, Swapchain, SwapchainCreateInfo, SwapchainCreationError,
 };
-use vulkano::sync::{self, FenceSignalFuture, FlushError, GpuFuture};
+use vulkano::sync::{self, FenceSignalFuture, FlushError, GpuFuture, NowFuture};
 use vulkano_win::VkSurfaceBuild;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, Event as WinitEvent, Event, MouseButton, MouseScrollDelta, WindowEvent, KeyboardInput, VirtualKeyCode};
@@ -48,12 +45,20 @@ use winit::window::{Window, WindowBuilder};
 use vulkano::shader::SpecializationConstants;
 use vulkano::shader::SpecializationMapEntry;
 use std::collections::HashMap;
+use std::io::Cursor;
+// use image::codecs::png;
+use image::codecs::png::PngReader;
+use png::Decoder;
+use image::ImageDecoder;
+// use image::error::UnsupportedErrorKind::Format;
 // use image::error::UnsupportedErrorKind::Format;
 // extern crate ndarray;
 use vulkano::{format::Format};
 use ndarray::{arr2, arr3, Array2, array, Array};
+use vulkano::descriptor_set::{DescriptorSet, PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::pipeline::graphics::depth_stencil::{CompareOp, DepthState, DepthStencilState};
-use winit::event::VirtualKeyCode::V;
+use vulkano::sampler::{Sampler, SamplerCreateInfo};
+
 // use ndarray::{arr2, arr3,  Array2, array, Array};
 
 
@@ -367,6 +372,64 @@ fn get_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain<Window>>) -> Ar
         .unwrap()
 }
 
+fn get_texture(
+    queue: Arc<Queue>,
+    device: Arc<Device>,
+    pipeline: Arc<GraphicsPipeline>,
+)
+    -> (
+        Arc<ImageView<ImmutableImage>>,
+        CommandBufferExecFuture<NowFuture, PrimaryAutoCommandBuffer>,
+        Arc<Sampler>,
+        Arc<PersistentDescriptorSet>
+    ) {
+    let (texture, tex_future) = {
+        let image_array_data: Vec<_> = vec![
+            include_bytes!("square.png").to_vec(),
+            include_bytes!("star.png").to_vec(),
+            include_bytes!("asterisk.png").to_vec(),
+        ]
+            .into_iter()
+            .flat_map(|png_bytes| {
+                let cursor = Cursor::new(png_bytes);
+                let decoder = Decoder::new(cursor);
+                let mut reader = decoder.read_info().unwrap();
+                let info = reader.info();
+                let mut image_data = Vec::new();
+                image_data.resize((info.width * info.height * 4) as usize, 0);
+                reader.next_frame(&mut image_data).unwrap();
+                image_data
+            })
+            .collect();
+        let dimensions = ImageDimensions::Dim2d {
+            width: 128,
+            height: 128,
+            array_layers: 3,
+        }; // Replace with your actual image array dimensions
+        let (image, future) = ImmutableImage::from_iter(
+            image_array_data,
+            dimensions,
+            MipmapsCount::Log2,
+            Format::R8G8B8A8_SRGB,
+            queue.clone(),
+        )
+            .unwrap();
+        (ImageView::new_default(image).unwrap(), future)
+    };
+    let sampler = Sampler::new(device.clone(), SamplerCreateInfo::simple_repeat_linear()).unwrap();
+    let layout = pipeline.layout().set_layouts().get(0).unwrap();
+    let set = PersistentDescriptorSet::new(
+        layout.clone(),
+        [WriteDescriptorSet::image_view_sampler(
+            0,
+            texture.clone(),
+            sampler.clone(),
+        )],
+    )
+        .unwrap();
+    (texture, tex_future, sampler, set)
+}
+
 fn get_framebuffers(
     images: &[Arc<SwapchainImage<Window>>],
     render_pass: Arc<RenderPass>,
@@ -442,6 +505,8 @@ fn get_command_buffers(
     pipeline: Arc<GraphicsPipeline>,
     framebuffers: &Vec<Arc<Framebuffer>>,
     vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
+    set: Arc<PersistentDescriptorSet>,
+    viewport: Viewport,
 ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
     framebuffers
         .iter()
@@ -465,13 +530,14 @@ fn get_command_buffers(
                     SubpassContents::Inline,
                 )
                 .unwrap()
+                .set_viewport(0, [viewport.clone()])
                 .bind_pipeline_graphics(pipeline.clone())
-                // .bind_descriptor_sets(
-                //     PipelineBindPoint::Graphics,
-                //     pipeline.layout().clone(),
-                //     0,
-                //     set,
-                // )
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Graphics,
+                    pipeline.layout().clone(),
+                    0,
+                    set.clone(),
+                )
                 .bind_vertex_buffers(0, vertex_buffer.clone())
                 .draw(vertex_buffer.len() as u32, 1, 0, 0)
                 .unwrap()
@@ -546,6 +612,7 @@ fn main() {
     };
 
     let render_pass = get_render_pass(device.clone(), swapchain.clone());
+
     let framebuffers = get_framebuffers(
         &images,
         render_pass.clone(),
@@ -825,13 +892,20 @@ fn main() {
         viewport.clone(),
         surface.window().inner_size(),
     );
-
+    let (
+        texture,
+        tex_future,
+        sampler,
+        set
+    )  = get_texture(queue.clone(), device.clone(), pipeline.clone());
     let mut command_buffers = get_command_buffers(
         device.clone(),
         queue.clone(),
-        pipeline,
+        pipeline.clone(),
         &framebuffers,
         vertex_buffer.clone(),
+        set,
+        viewport.clone(),
     );
 
     // ash::vk::ExtLineRasterizationFnCopy
@@ -910,6 +984,12 @@ fn main() {
                         viewport.clone(),
                         surface.window().inner_size(),
                     );
+                    let (
+                        texture,
+                        tex_future,
+                        sampler,
+                        set
+                    )  = get_texture(queue.clone(), device.clone(), new_pipeline.clone());
                     vertex_buffer = CpuAccessibleBuffer::from_iter(
                         device.clone(),
                         BufferUsage::vertex_buffer(),
@@ -920,9 +1000,11 @@ fn main() {
                     command_buffers = get_command_buffers(
                         device.clone(),
                         queue.clone(),
-                        new_pipeline,
+                        new_pipeline.clone(),
                         &new_framebuffers,
                         vertex_buffer.clone(),
+                        set,
+                        viewport.clone()
                     );
                     window_width = surface.window().inner_size().width as f64;
                     window_height = surface.window().inner_size().height as f64;

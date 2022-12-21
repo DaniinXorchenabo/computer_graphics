@@ -1,15 +1,23 @@
 
 // language=GLSL
 #version 450
+
+layout(set = 0, binding = 0) uniform sampler2DArray tex;
 layout (constant_id = 0) const int WIGHT = 64;
 layout (constant_id = 1) const int HEIGHT = 64;
 
+
+layout(location = 0) in vec2 tex_coords;
 layout(location = 0) out vec4 f_color;
 layout(location = 4) in vec4 fragColor;
 layout(location = 5) in vec3 contour_size;
 layout(location = 15) in mat4 points;
 layout(location = 19) in vec4[3] contour_colors_fr;
+//layout(location = 23) out vec2 tex_coords;
+//layout(location = 24) out uint layer;
+layout(location = 26) flat in int layer;
 layout(location = 27) in vec4 plane_params;
+
 
 // layout (depth_any) out float gl_FragDepth;
 
@@ -52,7 +60,7 @@ void main() {
                                 + plane_params.z * cam_pos.z
                                 + plane_params.w;
         float mn;
-        if (light_distanse * cam_distanse <= 0) {
+        if (light_distanse * cam_distanse < 0) {
             mn = 0.05;
         } else {
             vec3 to_sun = sun_point - points[3].xyz;
@@ -76,5 +84,5 @@ void main() {
     // gl_FragDepth = 1. - ((atan(points[0][2] * 1.) * 2. / radians(180)) + 1.) / 2.;
     // f_color = vec4(0., 1., 0., 1.);
 
-
+    f_color = texture(tex, vec3(tex_coords, layer));
 }

@@ -6,10 +6,20 @@ vec3 colors[3] = vec3[](
     vec3(0.0, 1.0, 0.0),
     vec3(0.0, 0.0, 1.0)
 );
+const float x[4] = float[](0.0, 0.0, 1.0, 1.0);
+const float y[4] = float[](0.0, 1.0, 0.0, 1.0);
+
 layout (constant_id = 0) const int WIGHT = 64;
 layout (constant_id = 1) const int HEIGHT = 64;
 
+//layout(set = 0, binding = 0) uniform sampler2DArray tex;
+
+//layout(location = 0) in vec2 position;
+layout(location = 0) out vec2 tex_coords;
+
+
 layout(location = 0) in mat4 position;
+
 // layout(location = 3) in mat3 move_matrix;
 layout(location = 4) out vec4 fragColor;
 layout(location = 5) out vec3 contour_size;
@@ -19,9 +29,15 @@ layout(location = 12) in vec4[3] point_colors;
 layout(location = 15) out mat4 points ;
 
 layout(location = 19) out vec4[3] contour_colors_fr;
+//layout(location = 19) out vec4 f_color;
+
 layout(location = 22) in mat4 move_matrix;
 layout(location = 26) in int projection_flag;
+layout(location = 26) out int layer;
 layout(location = 27) out vec4 plane_params;
+
+//layout(location = 28) in vec2 tex_coords;
+//layout(location = 29) in uint layer;
 
 
 
@@ -136,9 +152,13 @@ void main() {
         contour[1] == 0.0 ? 0.0: (contour[1] == 1.0 ? 1.0 :max( contour[1] * length(poses[1].xyz - poses[2].xyz) / length(position[1].xy - position[2].xy), 1.4)),
         contour[2] == 0.0 ? 0.0: (contour[2] == 1.0 ? 1.0 :max( contour[2] * length(poses[2].xyz - poses[0].xyz) / length(position[2].xy - position[0].xy), 1.4))
     );
+    contour_size = vec3(0., 0., 0.);
 
-    contour_colors_fr = contour_colors;
+//    contour_colors_fr = contour_colors;
 
     fragColor = point_colors[ gl_VertexIndex % 3 ] ;
+
+    tex_coords = vec2(x[gl_VertexIndex % 3], y[gl_VertexIndex % 3]);
+    layer = gl_InstanceIndex;
 
 }
