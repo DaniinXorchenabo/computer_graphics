@@ -613,7 +613,7 @@ fn main() {
 
     let render_pass = get_render_pass(device.clone(), swapchain.clone());
 
-    let framebuffers = get_framebuffers(
+    let mut framebuffers = get_framebuffers(
         &images,
         render_pass.clone(),
         device.clone(),
@@ -884,7 +884,7 @@ fn main() {
         depth_range: 0.0..1.0,
     };
 
-    let pipeline = get_pipeline(
+    let mut pipeline = get_pipeline(
         device.clone(),
         vs.clone(),
         fs.clone(),
@@ -896,7 +896,7 @@ fn main() {
         texture,
         tex_future,
         sampler,
-        set
+        mut set
     )  = get_texture(queue.clone(), device.clone(), pipeline.clone());
     let mut command_buffers = get_command_buffers(
         device.clone(),
@@ -904,7 +904,7 @@ fn main() {
         pipeline.clone(),
         &framebuffers,
         vertex_buffer.clone(),
-        set,
+        set.clone(),
         viewport.clone(),
     );
 
@@ -965,7 +965,7 @@ fn main() {
                     Err(e) => panic!("Failed to recreate swapchain: {:?}", e),
                 };
                 swapchain = new_swapchain;
-                let new_framebuffers = get_framebuffers(
+                let mut framebuffers = get_framebuffers(
                     &new_images,
                     render_pass.clone(),
                     device.clone(),
@@ -976,7 +976,7 @@ fn main() {
                     window_resized = false;
 
                     viewport.dimensions = new_dimensions.into();
-                    let new_pipeline = get_pipeline(
+                    pipeline = get_pipeline(
                         device.clone(),
                         vs.clone(),
                         fs.clone(),
@@ -984,12 +984,7 @@ fn main() {
                         viewport.clone(),
                         surface.window().inner_size(),
                     );
-                    let (
-                        texture,
-                        tex_future,
-                        sampler,
-                        set
-                    )  = get_texture(queue.clone(), device.clone(), new_pipeline.clone());
+                    set  = get_texture(queue.clone(), device.clone(), pipeline.clone()).3;
                     vertex_buffer = CpuAccessibleBuffer::from_iter(
                         device.clone(),
                         BufferUsage::vertex_buffer(),
@@ -1000,14 +995,31 @@ fn main() {
                     command_buffers = get_command_buffers(
                         device.clone(),
                         queue.clone(),
-                        new_pipeline.clone(),
-                        &new_framebuffers,
+                        pipeline.clone(),
+                        &framebuffers,
                         vertex_buffer.clone(),
-                        set,
+                        set.clone(),
                         viewport.clone()
                     );
                     window_width = surface.window().inner_size().width as f64;
                     window_height = surface.window().inner_size().height as f64;
+                } else {
+                    vertex_buffer = CpuAccessibleBuffer::from_iter(
+                        device.clone(),
+                        BufferUsage::vertex_buffer(),
+                        false,
+                        figure1.get_vertex(surface.window().inner_size()).into_iter(),
+                    )
+                        .unwrap();
+                    command_buffers = get_command_buffers(
+                        device.clone(),
+                        queue.clone(),
+                        pipeline.clone(),
+                        &framebuffers,
+                        vertex_buffer.clone(),
+                        set.clone(),
+                        viewport.clone()
+                    );
                 }
             }
 
@@ -1078,7 +1090,7 @@ fn main() {
             }
             if changes {
                 recreate_swapchain = true;
-                window_resized = true;
+                // window_resized = true;
             }
         }
         WinitEvent::WindowEvent {
@@ -1202,7 +1214,7 @@ fn main() {
 
             if changes {
                 recreate_swapchain = true;
-                window_resized = true;
+                // window_resized = true;
             }
         }
         WinitEvent::WindowEvent {
@@ -1238,7 +1250,7 @@ fn main() {
             }
             if changes {
                 recreate_swapchain = true;
-                window_resized = true;
+                // window_resized = true;
             }
         }
 
@@ -1279,7 +1291,7 @@ fn main() {
 
             if figure1._changed.any() {
                 recreate_swapchain = true;
-                window_resized = true;
+                // window_resized = true;
 
                 // vertex_buffer = CpuAccessibleBuffer::from_iter(
                 //     device.clone(),
@@ -1314,7 +1326,7 @@ fn main() {
 
             if figure1._changed.any() {
                 recreate_swapchain = true;
-                window_resized = true;
+                // window_resized = true;
 
                 // vertex_buffer = CpuAccessibleBuffer::from_iter(
                 //     device.clone(),
@@ -1362,7 +1374,7 @@ fn main() {
                         figure1._changed.rotate_angels = true;
                         if figure1._changed.any() {
                             recreate_swapchain = true;
-                            window_resized = true;
+                            // window_resized = true;
                         }
                     }
                     last_mouse_pos.0 = position.x;
