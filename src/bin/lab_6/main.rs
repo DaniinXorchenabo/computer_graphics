@@ -385,9 +385,11 @@ fn get_texture(
     ) {
     let (texture, tex_future) = {
         let image_array_data: Vec<_> = vec![
-            include_bytes!("square.png").to_vec(),
-            include_bytes!("star.png").to_vec(),
-            include_bytes!("asterisk.png").to_vec(),
+            include_bytes!("metal.png").to_vec(),
+            include_bytes!("metal.png").to_vec(),
+            include_bytes!("metal.png").to_vec(),
+            // include_bytes!("star.png").to_vec(),
+            // include_bytes!("asterisk.png").to_vec(),
         ]
             .into_iter()
             .flat_map(|png_bytes| {

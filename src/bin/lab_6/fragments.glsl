@@ -83,6 +83,6 @@ void main() {
     }
     // gl_FragDepth = 1. - ((atan(points[0][2] * 1.) * 2. / radians(180)) + 1.) / 2.;
     // f_color = vec4(0., 1., 0., 1.);
-
-    f_color = texture(tex, vec3(tex_coords, layer));
+    vec4 texture_vec = texture(tex, vec3(tex_coords, layer));
+    f_color = normalize(texture_vec * f_color) * (f_color.length() + texture_vec.length()) / 2;
 }

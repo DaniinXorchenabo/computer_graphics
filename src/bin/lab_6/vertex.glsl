@@ -6,8 +6,8 @@ vec3 colors[3] = vec3[](
     vec3(0.0, 1.0, 0.0),
     vec3(0.0, 0.0, 1.0)
 );
-const float x[4] = float[](0.0, 0.0, 1.0, 1.0);
-const float y[4] = float[](0.0, 1.0, 0.0, 1.0);
+const float x[3] = float[](0.0, 1.0, 0.0);
+const float y[3] = float[](1.0, 1.0, 0.0);
 
 layout (constant_id = 0) const int WIGHT = 64;
 layout (constant_id = 1) const int HEIGHT = 64;
