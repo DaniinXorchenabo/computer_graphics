@@ -17,17 +17,14 @@
 // use std::intrinsics::{cosf32, sinf32};
 // use std::ops::ControlFlow;
 use std::sync::Arc;
-
+use std::time::Instant;
 use bytemuck::{Pod, Zeroable};
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, TypedBufferAccess};
-use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo,
-    SubpassContents,
-};
+use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferExecFuture, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassContents};
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType, QueueFamily};
 use vulkano::device::{Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo};
 use vulkano::image::view::ImageView;
-use vulkano::image::{AttachmentImage, ImageAccess, ImageUsage, SwapchainImage};
+use vulkano::image::{AttachmentImage, ImageAccess, ImageDimensions, ImageUsage, ImmutableImage, MipmapsCount, SwapchainImage};
 use vulkano::instance::{Instance, InstanceCreateInfo};
 use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
 use vulkano::pipeline::graphics::vertex_input::BuffersDefinition;
@@ -38,7 +35,7 @@ use vulkano::shader::ShaderModule;
 use vulkano::swapchain::{
     self, AcquireError, Surface, Swapchain, SwapchainCreateInfo, SwapchainCreationError,
 };
-use vulkano::sync::{self, FenceSignalFuture, FlushError, GpuFuture};
+use vulkano::sync::{self, FenceSignalFuture, FlushError, GpuFuture, NowFuture};
 use vulkano_win::VkSurfaceBuild;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, Event as WinitEvent, Event, MouseButton, MouseScrollDelta, WindowEvent, KeyboardInput, VirtualKeyCode};
@@ -48,13 +45,21 @@ use winit::window::{Window, WindowBuilder};
 use vulkano::shader::SpecializationConstants;
 use vulkano::shader::SpecializationMapEntry;
 use std::collections::HashMap;
-use std::time::Instant;
+use std::io::Cursor;
+// use std::time::Instant;
+// use image::codecs::png;
+use image::codecs::png::PngReader;
+use png::Decoder;
+use image::ImageDecoder;
+// use image::error::UnsupportedErrorKind::Format;
 // use image::error::UnsupportedErrorKind::Format;
 // extern crate ndarray;
 use vulkano::{format::Format};
 use ndarray::{arr2, arr3, Array2, array, Array};
+use vulkano::descriptor_set::{DescriptorSet, PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::pipeline::graphics::depth_stencil::{CompareOp, DepthState, DepthStencilState};
-use winit::event::VirtualKeyCode::V;
+use vulkano::sampler::{Sampler, SamplerCreateInfo};
+
 // use ndarray::{arr2, arr3,  Array2, array, Array};
 
 
@@ -368,6 +373,66 @@ fn get_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain<Window>>) -> Ar
         .unwrap()
 }
 
+fn get_texture(
+    queue: Arc<Queue>,
+    device: Arc<Device>,
+    pipeline: Arc<GraphicsPipeline>,
+)
+    -> (
+        Arc<ImageView<ImmutableImage>>,
+        CommandBufferExecFuture<NowFuture, PrimaryAutoCommandBuffer>,
+        Arc<Sampler>,
+        Arc<PersistentDescriptorSet>
+    ) {
+    let (texture, tex_future) = {
+        let image_array_data: Vec<_> = vec![
+            include_bytes!("metal.png").to_vec(),
+            include_bytes!("metal.png").to_vec(),
+            include_bytes!("metal.png").to_vec(),
+            // include_bytes!("star.png").to_vec(),
+            // include_bytes!("asterisk.png").to_vec(),
+        ]
+            .into_iter()
+            .flat_map(|png_bytes| {
+                let cursor = Cursor::new(png_bytes);
+                let decoder = Decoder::new(cursor);
+                let mut reader = decoder.read_info().unwrap();
+                let info = reader.info();
+                let mut image_data = Vec::new();
+                image_data.resize((info.width * info.height * 4) as usize, 0);
+                reader.next_frame(&mut image_data).unwrap();
+                image_data
+            })
+            .collect();
+        let dimensions = ImageDimensions::Dim2d {
+            width: 128,
+            height: 128,
+            array_layers: 3,
+        }; // Replace with your actual image array dimensions
+        let (image, future) = ImmutableImage::from_iter(
+            image_array_data,
+            dimensions,
+            MipmapsCount::Log2,
+            Format::R8G8B8A8_SRGB,
+            queue.clone(),
+        )
+            .unwrap();
+        (ImageView::new_default(image).unwrap(), future)
+    };
+    let sampler = Sampler::new(device.clone(), SamplerCreateInfo::simple_repeat_linear()).unwrap();
+    let layout = pipeline.layout().set_layouts().get(0).unwrap();
+    let set = PersistentDescriptorSet::new(
+        layout.clone(),
+        [WriteDescriptorSet::image_view_sampler(
+            0,
+            texture.clone(),
+            sampler.clone(),
+        )],
+    )
+        .unwrap();
+    (texture, tex_future, sampler, set)
+}
+
 fn get_framebuffers(
     images: &[Arc<SwapchainImage<Window>>],
     render_pass: Arc<RenderPass>,
@@ -443,6 +508,8 @@ fn get_command_buffers(
     pipeline: Arc<GraphicsPipeline>,
     framebuffers: &Vec<Arc<Framebuffer>>,
     vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
+    set: Arc<PersistentDescriptorSet>,
+    viewport: Viewport,
 ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
     framebuffers
         .iter()
@@ -466,13 +533,14 @@ fn get_command_buffers(
                     SubpassContents::Inline,
                 )
                 .unwrap()
+                .set_viewport(0, [viewport.clone()])
                 .bind_pipeline_graphics(pipeline.clone())
-                // .bind_descriptor_sets(
-                //     PipelineBindPoint::Graphics,
-                //     pipeline.layout().clone(),
-                //     0,
-                //     set,
-                // )
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Graphics,
+                    pipeline.layout().clone(),
+                    0,
+                    set.clone(),
+                )
                 .bind_vertex_buffers(0, vertex_buffer.clone())
                 .draw(vertex_buffer.len() as u32, 1, 0, 0)
                 .unwrap()
@@ -547,7 +615,8 @@ fn main() {
     };
 
     let render_pass = get_render_pass(device.clone(), swapchain.clone());
-    let framebuffers = get_framebuffers(
+
+    let mut framebuffers = get_framebuffers(
         &images,
         render_pass.clone(),
         device.clone(),
@@ -822,7 +891,7 @@ fn main() {
         depth_range: 0.0..1.0,
     };
 
-    let pipeline = get_pipeline(
+    let mut pipeline = get_pipeline(
         device.clone(),
         vs.clone(),
         fs.clone(),
@@ -830,13 +899,20 @@ fn main() {
         viewport.clone(),
         surface.window().inner_size(),
     );
-
+    let (
+        texture,
+        tex_future,
+        sampler,
+        mut set
+    )  = get_texture(queue.clone(), device.clone(), pipeline.clone());
     let mut command_buffers = get_command_buffers(
         device.clone(),
         queue.clone(),
-        pipeline,
+        pipeline.clone(),
         &framebuffers,
         vertex_buffer.clone(),
+        set.clone(),
+        viewport.clone(),
     );
 
     // ash::vk::ExtLineRasterizationFnCopy
@@ -871,6 +947,9 @@ fn main() {
     let mut speed_mn = 1.0;
     let mut change_mn = false;
     let rotation_start = Instant::now();
+    let test_fps = Instant::now();
+    let mut cadr_counter = 0;
+    let mut old_time_fps: f64 =  test_fps.elapsed().as_secs() as f64 + test_fps.elapsed().subsec_nanos() as f64 / 1_000_000_000.0;
 
 
 
@@ -903,7 +982,7 @@ fn main() {
                     Err(e) => panic!("Failed to recreate swapchain: {:?}", e),
                 };
                 swapchain = new_swapchain;
-                let new_framebuffers = get_framebuffers(
+                let mut framebuffers = get_framebuffers(
                     &new_images,
                     render_pass.clone(),
                     device.clone(),
@@ -914,7 +993,7 @@ fn main() {
                     window_resized = false;
 
                     viewport.dimensions = new_dimensions.into();
-                    let new_pipeline = get_pipeline(
+                    pipeline = get_pipeline(
                         device.clone(),
                         vs.clone(),
                         fs.clone(),
@@ -922,6 +1001,7 @@ fn main() {
                         viewport.clone(),
                         surface.window().inner_size(),
                     );
+                    set  = get_texture(queue.clone(), device.clone(), pipeline.clone()).3;
                     vertex_buffer = CpuAccessibleBuffer::from_iter(
                         device.clone(),
                         BufferUsage::vertex_buffer(),
@@ -932,12 +1012,31 @@ fn main() {
                     command_buffers = get_command_buffers(
                         device.clone(),
                         queue.clone(),
-                        new_pipeline,
-                        &new_framebuffers,
+                        pipeline.clone(),
+                        &framebuffers,
                         vertex_buffer.clone(),
+                        set.clone(),
+                        viewport.clone()
                     );
                     window_width = surface.window().inner_size().width as f64;
                     window_height = surface.window().inner_size().height as f64;
+                } else {
+                    vertex_buffer = CpuAccessibleBuffer::from_iter(
+                        device.clone(),
+                        BufferUsage::vertex_buffer(),
+                        false,
+                        figure1.get_vertex(surface.window().inner_size()).into_iter(),
+                    )
+                        .unwrap();
+                    command_buffers = get_command_buffers(
+                        device.clone(),
+                        queue.clone(),
+                        pipeline.clone(),
+                        &framebuffers,
+                        vertex_buffer.clone(),
+                        set.clone(),
+                        viewport.clone()
+                    );
                 }
             }
 
@@ -953,6 +1052,15 @@ fn main() {
 
             if suboptimal {
                 recreate_swapchain = true;
+            }
+            cadr_counter += 1;
+            // if
+            let elapsed = test_fps.elapsed();
+            let now_time = elapsed.as_secs() as f64 + elapsed.subsec_nanos() as f64 / 1_000_000_000.0;
+            if now_time - old_time_fps  > 1f64 {
+                println!("fps {:}", cadr_counter as f64 / (now_time - old_time_fps));
+                old_time_fps = now_time;
+                cadr_counter = 0;
             }
 
             // wait for the fence related to this image to finish (normally this would be the oldest fence)
@@ -993,12 +1101,6 @@ fn main() {
 
             previous_fence_i = image_i;
         }
-        WinitEvent::WindowEvent {
-            event: WindowEvent::ReceivedCharacter(code),
-            ..
-        } => {
-
-        }
         Event::RedrawEventsCleared => {
             let mn = 0.01;
             let mut changes = false;
@@ -1036,7 +1138,7 @@ fn main() {
             println!("{}", rotation);
             if changes {
                 recreate_swapchain = true;
-                window_resized = true;
+                // window_resized = true;
             }
         }
         WinitEvent::WindowEvent {
@@ -1051,11 +1153,11 @@ fn main() {
             },
             ..
         } => {
-            println!("Keycode {:} or {:?} Pressed ", scancode, v_code);
+            // println!("Keycode {:} or {:?} Pressed ", scancode, v_code);
             keyboard_pressed.insert(v_code, true);
             let mut changes = false;
 
-            println!("{}", figure1.move_matrix);
+            // println!("{}", figure1.move_matrix);
             let mut no_projections = true;
             for (keycode, projection_code) in &projection_rules {
                 match keyboard_pressed.get(keycode) {
@@ -1080,7 +1182,7 @@ fn main() {
 
             if changes {
                 recreate_swapchain = true;
-                window_resized = true;
+                // window_resized = true;
             }
         }
         WinitEvent::WindowEvent {
@@ -1095,7 +1197,7 @@ fn main() {
             },
             ..
         } => {
-            println!("Keycode {:} or {:?} Released", scancode, v_code);
+            // println!("Keycode {:} or {:?} Released", scancode, v_code);
             keyboard_pressed.insert(v_code, false);
 
             let mut changes = false;
@@ -1116,7 +1218,7 @@ fn main() {
             }
             if changes {
                 recreate_swapchain = true;
-                window_resized = true;
+                // window_resized = true;
             }
         }
 
@@ -1138,7 +1240,7 @@ fn main() {
             } else {
                 match delta {
                     MouseScrollDelta::LineDelta(x, y) => {
-                        println!("* x={:}, y={:}", x, y);
+                        // println!("* x={:}, y={:}", x, y);
                         if y > 0.0 {
                             figure1.scale[0] *= 1.0 + y / 10.0;
                             figure1.scale[1] *= 1.0 + y / 10.0;
@@ -1157,7 +1259,7 @@ fn main() {
 
             if figure1._changed.any() {
                 recreate_swapchain = true;
-                window_resized = true;
+                // window_resized = true;
 
                 // vertex_buffer = CpuAccessibleBuffer::from_iter(
                 //     device.clone(),
@@ -1171,7 +1273,7 @@ fn main() {
         WinitEvent::WindowEvent {
             event: WindowEvent::MouseInput { button, state: ElementState::Pressed, .. }, ..
         } => {
-            println!("mouse button is {:?} Pressed", button);
+            // println!("mouse button is {:?} Pressed", button);
             match button {
                 MouseButton::Left => {
                     mouse_button_pressed = true;
@@ -1192,7 +1294,7 @@ fn main() {
 
             if figure1._changed.any() {
                 recreate_swapchain = true;
-                window_resized = true;
+                // window_resized = true;
 
                 // vertex_buffer = CpuAccessibleBuffer::from_iter(
                 //     device.clone(),
@@ -1206,7 +1308,7 @@ fn main() {
         WinitEvent::WindowEvent {
             event: WindowEvent::MouseInput { button, state: ElementState::Released, .. }, ..
         } => {
-            println!("mouse button is {:?} Released", button);
+            // println!("mouse button is {:?} Released", button);
             match button {
                 MouseButton::Left => {
                     mouse_button_pressed = false;
@@ -1234,13 +1336,13 @@ fn main() {
                     let sensitivity = 0.01;
 
                     if last_mouse_pos != (-1.0f64, -1.0f64) {
-                        println!("pos vec({:}, {:}) || <{:?}>", position.x - last_mouse_pos.0, position.y - last_mouse_pos.1, position);
+                        // println!("pos vec({:}, {:}) || <{:?}>", position.x - last_mouse_pos.0, position.y - last_mouse_pos.1, position);
                         figure1.rotate_angels[1] -= ((position.x - last_mouse_pos.0) * sensitivity) as f32;
                         figure1.rotate_angels[0] -= ((position.y - last_mouse_pos.1) * sensitivity) as f32;
                         figure1._changed.rotate_angels = true;
                         if figure1._changed.any() {
                             recreate_swapchain = true;
-                            window_resized = true;
+                            // window_resized = true;
                         }
                     }
                     last_mouse_pos.0 = position.x;
