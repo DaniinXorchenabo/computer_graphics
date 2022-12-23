@@ -120,9 +120,9 @@ void main() {
     mat4 disp_pos_m =  ( projection_mat *  _pos_m);
 
     gl_Position = vec4(
-    disp_pos_m[gl_VertexIndex % 3].xy,
-    (atan(_pos_m[gl_VertexIndex % 3].z * 0.01) * 2 / radians(180)),
-    disp_pos_m[gl_VertexIndex % 3].w
+        disp_pos_m[gl_VertexIndex % 3].xy,
+        (atan(_pos_m[gl_VertexIndex % 3].z * 0.01) * 2 / radians(180)),
+        disp_pos_m[gl_VertexIndex % 3].w
     );
 
 
