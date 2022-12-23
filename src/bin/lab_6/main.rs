@@ -17,7 +17,7 @@
 // use std::intrinsics::{cosf32, sinf32};
 // use std::ops::ControlFlow;
 use std::sync::Arc;
-
+use std::time::Instant;
 use bytemuck::{Pod, Zeroable};
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, TypedBufferAccess};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferExecFuture, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassContents};
@@ -46,6 +46,7 @@ use vulkano::shader::SpecializationConstants;
 use vulkano::shader::SpecializationMapEntry;
 use std::collections::HashMap;
 use std::io::Cursor;
+// use std::time::Instant;
 // use image::codecs::png;
 use image::codecs::png::PngReader;
 use png::Decoder;
@@ -936,6 +937,9 @@ fn main() {
     let projection_rules: HashMap<VirtualKeyCode, i32> = HashMap::from([
         (VirtualKeyCode::Key1, 1),
     ]);
+    let test_fps = Instant::now();
+    let mut cadr_counter = 0;
+    let mut old_time_fps: f64 =  test_fps.elapsed().as_secs() as f64 + test_fps.elapsed().subsec_nanos() as f64 / 1_000_000_000.0;
 
 
     event_loop.run(move |event, _, control_flow| match event {
@@ -1037,6 +1041,15 @@ fn main() {
 
             if suboptimal {
                 recreate_swapchain = true;
+            }
+            cadr_counter += 1;
+            // if
+            let elapsed = test_fps.elapsed();
+            let now_time = elapsed.as_secs() as f64 + elapsed.subsec_nanos() as f64 / 1_000_000_000.0;
+            if now_time - old_time_fps  > 1f64 {
+                println!("fps {:}", cadr_counter as f64 / (now_time - old_time_fps));
+                old_time_fps = now_time;
+                cadr_counter = 0;
             }
 
             // wait for the fence related to this image to finish (normally this would be the oldest fence)
@@ -1178,7 +1191,7 @@ fn main() {
             },
             ..
         } => {
-            println!("Keycode {:} or {:?} Pressed ", scancode, v_code);
+            // println!("Keycode {:} or {:?} Pressed ", scancode, v_code);
             keyboard_pressed.insert(v_code, true);
             let mn = 0.01;
             let mut changes = false;
@@ -1192,7 +1205,7 @@ fn main() {
             //         _ => {}
             //     }
             // }
-            println!("{}", figure1.move_matrix);
+            // println!("{}", figure1.move_matrix);
             let mut no_projections = true;
             for (keycode, projection_code) in &projection_rules {
                 match keyboard_pressed.get(keycode) {
@@ -1231,7 +1244,7 @@ fn main() {
             },
             ..
         } => {
-            println!("Keycode {:} or {:?} Released", scancode, v_code);
+            // println!("Keycode {:} or {:?} Released", scancode, v_code);
             keyboard_pressed.insert(v_code, false);
 
             let mut changes = false;
@@ -1274,7 +1287,7 @@ fn main() {
             } else {
                 match delta {
                     MouseScrollDelta::LineDelta(x, y) => {
-                        println!("* x={:}, y={:}", x, y);
+                        // println!("* x={:}, y={:}", x, y);
                         if y > 0.0 {
                             figure1.scale[0] *= 1.0 + y / 10.0;
                             figure1.scale[1] *= 1.0 + y / 10.0;
@@ -1307,7 +1320,7 @@ fn main() {
         WinitEvent::WindowEvent {
             event: WindowEvent::MouseInput { button, state: ElementState::Pressed, .. }, ..
         } => {
-            println!("mouse button is {:?} Pressed", button);
+            // println!("mouse button is {:?} Pressed", button);
             match button {
                 MouseButton::Left => {
                     mouse_button_pressed = true;
@@ -1342,7 +1355,7 @@ fn main() {
         WinitEvent::WindowEvent {
             event: WindowEvent::MouseInput { button, state: ElementState::Released, .. }, ..
         } => {
-            println!("mouse button is {:?} Released", button);
+            // println!("mouse button is {:?} Released", button);
             match button {
                 MouseButton::Left => {
                     mouse_button_pressed = false;
@@ -1370,7 +1383,7 @@ fn main() {
                     let sensitivity = 0.01;
 
                     if last_mouse_pos != (-1.0f64, -1.0f64) {
-                        println!("pos vec({:}, {:}) || <{:?}>", position.x - last_mouse_pos.0, position.y - last_mouse_pos.1, position);
+                        // println!("pos vec({:}, {:}) || <{:?}>", position.x - last_mouse_pos.0, position.y - last_mouse_pos.1, position);
                         figure1.rotate_angels[1] -= ((position.x - last_mouse_pos.0) * sensitivity) as f32;
                         figure1.rotate_angels[0] -= ((position.y - last_mouse_pos.1) * sensitivity) as f32;
                         figure1._changed.rotate_angels = true;
